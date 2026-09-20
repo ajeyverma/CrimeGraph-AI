@@ -4,7 +4,9 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ViewHelper } from 'three/examples/jsm/helpers/ViewHelper.js';
 import {
   RotateCw, ZoomIn, ZoomOut, Maximize2, Minimize2, Play, Pause,
-  Layers, Eye, EyeOff, RefreshCw, Sparkles, Filter, Check, ChevronDown
+  Layers, Eye, EyeOff, RefreshCw, Sparkles, Filter, Check, ChevronDown,
+  Search, X,
+  User, Phone as PhoneIcon, Car, Building2, MapPin, CreditCard, Briefcase, Package, Calendar, Circle
 } from 'lucide-react';
 
 export interface Graph3DNode {
@@ -55,16 +57,20 @@ const TYPE_COLORS: Record<string, string> = {
   Event: '#ec4899',        // Pink
 };
 
-const TYPE_ICONS: Record<string, string> = {
-  Person: '👤',
-  Phone: '📱',
-  Vehicle: '🚗',
-  Organization: '🏢',
-  Location: '📍',
-  Account: '💳',
-  Case: '📋',
-  Evidence: '📦',
-  Event: '📅',
+const renderEntityIcon = (type: string, size = 14, color?: string) => {
+  const iconProps = { size, color: color || TYPE_COLORS[type] || '#94a3b8', strokeWidth: 2 };
+  switch (type) {
+    case 'Person': return <User {...iconProps} />;
+    case 'Phone': return <PhoneIcon {...iconProps} />;
+    case 'Vehicle': return <Car {...iconProps} />;
+    case 'Organization': return <Building2 {...iconProps} />;
+    case 'Location': return <MapPin {...iconProps} />;
+    case 'Account': return <CreditCard {...iconProps} />;
+    case 'Case': return <Briefcase {...iconProps} />;
+    case 'Evidence': return <Package {...iconProps} />;
+    case 'Event': return <Calendar {...iconProps} />;
+    default: return <Circle {...iconProps} />;
+  }
 };
 
 export default function Network3DGraph({
@@ -166,6 +172,100 @@ export default function Network3DGraph({
   const getNodeLabel = useCallback((n: Graph3DNode) => {
     return n.name || n.number || n.licensePlate || n.accountNumber || n.id || 'Unknown';
   }, []);
+
+  // Smooth camera fly-to for target node
+  const flyToNode = useCallback((targetNode: Graph3DNode) => {
+    onSelectNode(targetNode);
+
+    const mesh = nodeMeshes.current.get(targetNode.id);
+    const simPos = simNodes.current.get(targetNode.id);
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+
+    if (!camera || !controls) return;
+
+    const pos = mesh ? mesh.position.clone() : (simPos ? new THREE.Vector3(simPos.x, simPos.y, simPos.z) : new THREE.Vector3(0, 0, 0));
+    const targetPos = new THREE.Vector3(pos.x + 40, pos.y + 30, pos.z + 80);
+
+    let t = 0;
+    const startPos = camera.position.clone();
+    const flyAnim = () => {
+      t += 0.04;
+      const ease = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(t, 1));
+      camera.position.lerpVectors(startPos, targetPos, ease);
+      controls.target.lerp(pos, 0.08);
+      controls.update();
+      if (t < 1) requestAnimationFrame(flyAnim);
+    };
+    flyAnim();
+  }, [onSelectNode]);
+
+  // 3D Search State & Logic
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
+
+  // Close search dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setSearchOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filter matching search results
+  const searchResults = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return nodes
+      .filter(n => {
+        const label = getNodeLabel(n).toLowerCase();
+        const id = (n.id || '').toLowerCase();
+        const type = (n.nodeType || '').toLowerCase();
+        const num = (n.number || '').toLowerCase();
+        const plate = (n.licensePlate || '').toLowerCase();
+        const acc = (n.accountNumber || '').toLowerCase();
+        const occ = (n.occupation || '').toLowerCase();
+        return (
+          label.includes(q) ||
+          id.includes(q) ||
+          type.includes(q) ||
+          num.includes(q) ||
+          plate.includes(q) ||
+          acc.includes(q) ||
+          occ.includes(q)
+        );
+      })
+      .slice(0, 10);
+  }, [searchQuery, nodes, getNodeLabel]);
+
+  const handleSelectSearchResult = (node: Graph3DNode) => {
+    // If the node's type is filtered out, automatically re-enable it so the node is visible
+    if (node.nodeType && !selectedTypes.has(node.nodeType) && selectedTypes.size > 0 && selectedTypes.size < availableTypes.length) {
+      setSelectedTypes(prev => {
+        const next = new Set(prev);
+        next.add(node.nodeType);
+        return next;
+      });
+    }
+
+    flyToNode(node);
+    setSearchOpen(false);
+  };
+
+  const handleSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      if (searchResults.length > 0) {
+        handleSelectSearchResult(searchResults[0]);
+      }
+    } else if (e.key === 'Escape') {
+      setSearchOpen(false);
+      setSearchQuery('');
+    }
+  };
 
   // Filter nodes based on active type filter
   const visibleNodes = useMemo(() => {
@@ -453,21 +553,7 @@ export default function Network3DGraph({
         const hit = intersects[0].object as THREE.Mesh;
         const targetNode = hit.userData.node as Graph3DNode;
         if (targetNode) {
-          onSelectNode(targetNode);
-
-          // Fly camera smoothly towards clicked node
-          const pos = hit.position;
-          const targetPos = new THREE.Vector3(pos.x + 40, pos.y + 30, pos.z + 80);
-
-          let t = 0;
-          const startPos = camera.position.clone();
-          const flyAnim = () => {
-            t += 0.04;
-            camera.position.lerpVectors(startPos, targetPos, t);
-            controls.target.lerp(pos, 0.08);
-            if (t < 1) requestAnimationFrame(flyAnim);
-          };
-          flyAnim();
+          flyToNode(targetNode);
         }
       } else {
         onSelectNode(null);
@@ -812,8 +898,7 @@ export default function Network3DGraph({
           ctx.shadowBlur = 6;
 
           const labelText = getNodeLabel(node);
-          const icon = TYPE_ICONS[node.nodeType] || '•';
-          ctx.fillText(`${icon} ${labelText}`, 128, 32);
+          ctx.fillText(labelText, 128, 32);
 
           const texture = new THREE.CanvasTexture(canvas);
           texture.minFilter = THREE.LinearFilter;
@@ -1053,195 +1138,380 @@ export default function Network3DGraph({
         </button>
       </div>
 
-      {/* Schema Filter Dropdown Menu in Top Bar */}
-      <div ref={filterMenuRef} style={{
+      {/* Top Left Bar: Entity Filter & 3D Search Controls */}
+      <div style={{
         position: 'absolute',
         top: 14,
-        left: 62,
+        left: 70,
         zIndex: 25,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
       }}>
-        <button
-          type="button"
-          onClick={() => setFilterMenuOpen(!filterMenuOpen)}
-          style={{
-            height: 30,
-            padding: '0 10px',
+        {/* Schema Filter Dropdown Menu */}
+        <div ref={filterMenuRef} style={{ position: 'relative' }}>
+          <button
+            type="button"
+            onClick={() => setFilterMenuOpen(!filterMenuOpen)}
+            style={{
+              height: 30,
+              padding: '0 10px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: 'rgba(15, 23, 42, 0.88)',
+              backdropFilter: 'blur(12px)',
+              border: `1px solid ${filterMenuOpen ? 'rgba(56, 189, 248, 0.5)' : 'rgba(255, 255, 255, 0.12)'}`,
+              borderRadius: 8,
+              color: '#e2e8f0',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+              transition: 'all 150ms ease',
+            }}
+            title="Filter Entities by Type"
+          >
+            <Filter size={13} style={{ color: '#38bdf8' }} />
+            <span>Filters</span>
+            <span style={{
+              fontSize: '0.66rem',
+              padding: '1px 6px',
+              borderRadius: 10,
+              background: isAllSelected
+                ? 'rgba(255,255,255,0.1)'
+                : isNoneSelected
+                  ? 'rgba(239, 68, 68, 0.2)'
+                  : 'rgba(56, 189, 248, 0.25)',
+              color: isAllSelected
+                ? '#cbd5e1'
+                : isNoneSelected
+                  ? '#f87171'
+                  : '#38bdf8',
+              fontWeight: 700,
+            }}>
+              {isAllSelected ? 'ALL' : isNoneSelected ? 'NONE' : `${selectedTypes.size} active`}
+            </span>
+            <ChevronDown
+              size={12}
+              style={{
+                color: '#94a3b8',
+                transform: filterMenuOpen ? 'rotate(180deg)' : 'none',
+                transition: 'transform 150ms ease',
+              }}
+            />
+          </button>
+
+          {filterMenuOpen && (
+            <div style={{
+              position: 'absolute',
+              top: 36,
+              left: 0,
+              width: 220,
+              background: 'rgba(15, 23, 42, 0.96)',
+              backdropFilter: 'blur(16px)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              borderRadius: 10,
+              boxShadow: '0 16px 40px rgba(0, 0, 0, 0.65)',
+              padding: '8px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4,
+              maxHeight: 340,
+              overflowY: 'auto',
+            }}>
+              {/* Header / Quick Actions */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '2px 6px 6px 6px',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                fontSize: '0.68rem',
+                color: '#94a3b8',
+                fontWeight: 600,
+              }}>
+                <span>SELECT TYPES</span>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button
+                    type="button"
+                    onClick={handleSelectAll}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#38bdf8',
+                      cursor: 'pointer',
+                      fontSize: '0.68rem',
+                      fontWeight: 600,
+                      padding: 0,
+                    }}
+                  >
+                    All
+                  </button>
+                  <span style={{ color: 'rgba(255,255,255,0.2)' }}>|</span>
+                  <button
+                    type="button"
+                    onClick={handleClearAll}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#94a3b8',
+                      cursor: 'pointer',
+                      fontSize: '0.68rem',
+                      fontWeight: 600,
+                      padding: 0,
+                    }}
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              {/* List of entity checkboxes */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4 }}>
+                {availableTypes.map(t => {
+                  const isChecked = selectedTypes.has(t);
+                  const col = TYPE_COLORS[t] || '#38bdf8';
+                  const count = nodes.filter(n => n.nodeType === t).length;
+
+                  return (
+                    <div
+                      key={t}
+                      onClick={() => toggleType(t)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '5px 8px',
+                        borderRadius: 6,
+                        background: isChecked ? 'rgba(255, 255, 255, 0.06)' : 'transparent',
+                        cursor: 'pointer',
+                        transition: 'background 120ms ease',
+                        userSelect: 'none',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {/* Checkbox box */}
+                        <div style={{
+                          width: 15,
+                          height: 15,
+                          borderRadius: 4,
+                          border: `1.5px solid ${isChecked ? col : 'rgba(255,255,255,0.3)'}`,
+                          background: isChecked ? col : 'transparent',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          transition: 'all 120ms ease',
+                          flexShrink: 0,
+                        }}>
+                          {isChecked && <Check size={11} color="#0f172a" strokeWidth={3.5} />}
+                        </div>
+
+                        {/* Icon and label */}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, flexShrink: 0 }}>
+                          {renderEntityIcon(t, 13, col)}
+                        </div>
+                        <span style={{
+                          fontSize: '0.76rem',
+                          fontWeight: isChecked ? 600 : 500,
+                          color: isChecked ? '#f8fafc' : '#94a3b8',
+                        }}>
+                          {t}
+                        </span>
+                      </div>
+
+                      {/* Count badge */}
+                      <span style={{
+                        fontSize: '0.68rem',
+                        color: 'rgba(148, 163, 184, 0.7)',
+                        fontWeight: 500,
+                      }}>
+                        {count}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 3D Search Bar Container */}
+        <div ref={searchContainerRef} style={{ position: 'relative' }}>
+          <div style={{
             display: 'flex',
             alignItems: 'center',
             gap: 6,
+            height: 30,
+            padding: '0 8px 0 10px',
             background: 'rgba(15, 23, 42, 0.88)',
             backdropFilter: 'blur(12px)',
-            border: `1px solid ${filterMenuOpen ? 'rgba(56, 189, 248, 0.5)' : 'rgba(255, 255, 255, 0.12)'}`,
+            border: `1px solid ${searchOpen && searchQuery ? 'rgba(56, 189, 248, 0.5)' : 'rgba(255, 255, 255, 0.12)'}`,
             borderRadius: 8,
-            color: '#e2e8f0',
-            fontSize: '0.75rem',
-            fontWeight: 600,
-            cursor: 'pointer',
             boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
             transition: 'all 150ms ease',
-          }}
-          title="Filter Entities by Type"
-        >
-          <Filter size={13} style={{ color: '#38bdf8' }} />
-          <span>Entity Filters</span>
-          <span style={{
-            fontSize: '0.66rem',
-            padding: '1px 6px',
-            borderRadius: 10,
-            background: isAllSelected
-              ? 'rgba(255,255,255,0.1)'
-              : isNoneSelected
-                ? 'rgba(239, 68, 68, 0.2)'
-                : 'rgba(56, 189, 248, 0.25)',
-            color: isAllSelected
-              ? '#cbd5e1'
-              : isNoneSelected
-                ? '#f87171'
-                : '#38bdf8',
-            fontWeight: 700,
-          }}>
-            {isAllSelected ? 'ALL' : isNoneSelected ? 'NONE' : `${selectedTypes.size} active`}
-          </span>
-          <ChevronDown
-            size={12}
-            style={{
-              color: '#94a3b8',
-              transform: filterMenuOpen ? 'rotate(180deg)' : 'none',
-              transition: 'transform 150ms ease',
-            }}
-          />
-        </button>
-
-        {filterMenuOpen && (
-          <div style={{
-            position: 'absolute',
-            top: 36,
-            left: 0,
             width: 220,
-            background: 'rgba(15, 23, 42, 0.96)',
-            backdropFilter: 'blur(16px)',
-            border: '1px solid rgba(255, 255, 255, 0.15)',
-            borderRadius: 10,
-            boxShadow: '0 16px 40px rgba(0, 0, 0, 0.65)',
-            padding: '8px',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 4,
-            maxHeight: 340,
-            overflowY: 'auto',
           }}>
-            {/* Header / Quick Actions */}
+            <Search size={13} style={{ color: '#38bdf8', flexShrink: 0 }} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setSearchOpen(true);
+              }}
+              onFocus={() => setSearchOpen(true)}
+              onKeyDown={handleSearchKeyDown}
+              placeholder="Search 3D entities..."
+              style={{
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                color: '#f8fafc',
+                fontSize: '0.75rem',
+                width: '100%',
+                fontWeight: 500,
+              }}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setSearchOpen(false);
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: 2,
+                  cursor: 'pointer',
+                  color: '#94a3b8',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
+          {/* Autocomplete Results Dropdown */}
+          {searchOpen && searchQuery.trim().length > 0 && (
             <div style={{
+              position: 'absolute',
+              top: 36,
+              left: 0,
+              width: 270,
+              background: 'rgba(15, 23, 42, 0.96)',
+              backdropFilter: 'blur(16px)',
+              border: '1px solid rgba(255, 255, 255, 0.15)',
+              borderRadius: 10,
+              boxShadow: '0 16px 40px rgba(0, 0, 0, 0.65)',
+              padding: '6px',
               display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '2px 6px 6px 6px',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-              fontSize: '0.68rem',
-              color: '#94a3b8',
-              fontWeight: 600,
+              flexDirection: 'column',
+              gap: 2,
+              maxHeight: 320,
+              overflowY: 'auto',
+              zIndex: 100,
             }}>
-              <span>SELECT ENTITIES</span>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button
-                  type="button"
-                  onClick={handleSelectAll}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#38bdf8',
-                    cursor: 'pointer',
-                    fontSize: '0.68rem',
-                    fontWeight: 600,
-                    padding: 0,
-                  }}
-                >
-                  All
-                </button>
-                <span style={{ color: 'rgba(255,255,255,0.2)' }}>|</span>
-                <button
-                  type="button"
-                  onClick={handleClearAll}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: '#94a3b8',
-                    cursor: 'pointer',
-                    fontSize: '0.68rem',
-                    fontWeight: 600,
-                    padding: 0,
-                  }}
-                >
-                  Clear
-                </button>
+              <div style={{
+                fontSize: '0.66rem',
+                fontWeight: 700,
+                color: '#94a3b8',
+                padding: '4px 6px',
+                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+                display: 'flex',
+                justifyContent: 'space-between',
+              }}>
+                <span>Search Results</span>
+                <span>{searchResults.length} found</span>
               </div>
-            </div>
 
-            {/* List of entity checkboxes */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4 }}>
-              {availableTypes.map(t => {
-                const isChecked = selectedTypes.has(t);
-                const col = TYPE_COLORS[t] || '#38bdf8';
-                const count = nodes.filter(n => n.nodeType === t).length;
-
-                return (
-                  <div
-                    key={t}
-                    onClick={() => toggleType(t)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      padding: '5px 8px',
-                      borderRadius: 6,
-                      background: isChecked ? 'rgba(255, 255, 255, 0.06)' : 'transparent',
-                      cursor: 'pointer',
-                      transition: 'background 120ms ease',
-                      userSelect: 'none',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      {/* Checkbox box */}
-                      <div style={{
-                        width: 15,
-                        height: 15,
-                        borderRadius: 4,
-                        border: `1.5px solid ${isChecked ? col : 'rgba(255,255,255,0.3)'}`,
-                        background: isChecked ? col : 'transparent',
+              {searchResults.length === 0 ? (
+                <div style={{
+                  padding: '12px 8px',
+                  fontSize: '0.74rem',
+                  color: '#64748b',
+                  textAlign: 'center',
+                }}>
+                  No entities matching "{searchQuery}"
+                </div>
+              ) : (
+                searchResults.map(n => {
+                  const col = TYPE_COLORS[n.nodeType] || '#38bdf8';
+                  const label = getNodeLabel(n);
+                  return (
+                    <div
+                      key={n.id}
+                      onClick={() => handleSelectSearchResult(n)}
+                      style={{
+                        padding: '6px 8px',
+                        borderRadius: 6,
+                        cursor: 'pointer',
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'center',
-                        transition: 'all 120ms ease',
-                        flexShrink: 0,
-                      }}>
-                        {isChecked && <Check size={11} color="#0f172a" strokeWidth={3.5} />}
+                        justifyContent: 'space-between',
+                        gap: 8,
+                        transition: 'background 120ms ease',
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+                        <div style={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: 6,
+                          background: `${col}18`,
+                          border: `1px solid ${col}30`,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}>
+                          {renderEntityIcon(n.nodeType, 13, col)}
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                          <span style={{
+                            fontSize: '0.76rem',
+                            fontWeight: 600,
+                            color: '#f8fafc',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}>
+                            {label}
+                          </span>
+                          <span style={{ fontSize: '0.64rem', color: '#94a3b8' }}>
+                            ID: {n.id} {n.occupation ? `· ${n.occupation}` : ''}
+                          </span>
+                        </div>
                       </div>
 
-                      {/* Icon and label */}
-                      <span style={{ fontSize: '0.85rem' }}>{TYPE_ICONS[t] || '•'}</span>
                       <span style={{
-                        fontSize: '0.76rem',
-                        fontWeight: isChecked ? 600 : 500,
-                        color: isChecked ? '#f8fafc' : '#94a3b8',
+                        fontSize: '0.62rem',
+                        fontWeight: 700,
+                        padding: '1px 6px',
+                        borderRadius: 4,
+                        background: `${col}25`,
+                        color: col,
+                        border: `1px solid ${col}40`,
+                        textTransform: 'uppercase',
+                        flexShrink: 0,
                       }}>
-                        {t}
+                        {n.nodeType}
                       </span>
                     </div>
-
-                    {/* Count badge */}
-                    <span style={{
-                      fontSize: '0.68rem',
-                      color: 'rgba(148, 163, 184, 0.7)',
-                      fontWeight: 500,
-                    }}>
-                      {count}
-                    </span>
-                  </div>
-                );
-              })}
+                  );
+                })
+              )}
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Right Top Corner: Switch to 2D & Fullscreen Buttons */}
@@ -1331,8 +1601,20 @@ export default function Network3DGraph({
           pointerEvents: 'none',
           maxWidth: 320,
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-            <span style={{ fontSize: '1.2rem' }}>{TYPE_ICONS[hoveredNode.nodeType] || '•'}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+            <div style={{
+              width: 32,
+              height: 32,
+              borderRadius: 8,
+              background: `${TYPE_COLORS[hoveredNode.nodeType] || '#38bdf8'}20`,
+              border: `1px solid ${TYPE_COLORS[hoveredNode.nodeType] || '#38bdf8'}40`,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              {renderEntityIcon(hoveredNode.nodeType, 18, TYPE_COLORS[hoveredNode.nodeType] || '#38bdf8')}
+            </div>
             <div>
               <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#fff' }}>
                 {getNodeLabel(hoveredNode)}
