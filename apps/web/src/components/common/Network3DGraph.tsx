@@ -182,19 +182,53 @@ export default function Network3DGraph({
     viewHelper.center.copy(controls.target);
     viewHelperRef.current = viewHelper;
 
+    // Disable depthWrite on all ViewHelper sprites so their transparent billboard quads never clip rings
+    viewHelper.traverse((child) => {
+      if ((child as any).isSprite) {
+        const sprite = child as THREE.Sprite;
+        sprite.material.depthWrite = false;
+        sprite.renderOrder = 2;
+      }
+    });
+
     // Glowing center sphere inside gizmo
     const centerGizmoMesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.24, 16, 16),
-      new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+      new THREE.SphereGeometry(0.24, 20, 20),
+      new THREE.MeshBasicMaterial({ color: 0x38bdf8, depthWrite: false, toneMapped: false })
     );
+    centerGizmoMesh.renderOrder = 1;
     viewHelper.add(centerGizmoMesh);
 
-    // Subtle equator ring inside gizmo
-    const ringGizmoMesh = new THREE.Mesh(
-      new THREE.RingGeometry(0.96, 1.02, 40),
-      new THREE.MeshBasicMaterial({ color: 0x64748b, side: THREE.DoubleSide, transparent: true, opacity: 0.35 })
-    );
-    viewHelper.add(ringGizmoMesh);
+    // Two prominent 3D Torus Rings (Horizontal Equator & Vertical Meridian)
+    // depthTest: false & depthWrite: false ensures rings are never clipped or masked at ANY angle
+    // 1. Horizontal Ring (XZ plane - Equator)
+    const hRingGeo = new THREE.TorusGeometry(1.0, 0.032, 16, 64);
+    const hRingMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+      depthTest: false,
+      toneMapped: false,
+    });
+    const horizontalRing = new THREE.Mesh(hRingGeo, hRingMat);
+    horizontalRing.rotation.x = Math.PI / 2;
+    horizontalRing.renderOrder = 0;
+    viewHelper.add(horizontalRing);
+
+    // 2. Vertical Ring (XY plane - Meridian)
+    const vRingGeo = new THREE.TorusGeometry(1.0, 0.032, 16, 64);
+    const vRingMat = new THREE.MeshBasicMaterial({
+      color: 0x818cf8,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+      depthTest: false,
+      toneMapped: false,
+    });
+    const verticalRing = new THREE.Mesh(vRingGeo, vRingMat);
+    verticalRing.renderOrder = 0;
+    viewHelper.add(verticalRing);
 
     setSceneReady(true);
 
@@ -618,6 +652,10 @@ export default function Network3DGraph({
       container.removeEventListener('pointerdown', onPointerDown);
       container.removeEventListener('mousemove', onMouseMove);
       container.removeEventListener('click', onClick);
+      hRingGeo.dispose();
+      hRingMat.dispose();
+      vRingGeo.dispose();
+      vRingMat.dispose();
       viewHelper.dispose();
       renderer.dispose();
     };
@@ -991,22 +1029,6 @@ export default function Network3DGraph({
         <div>• <strong>Click Sphere:</strong> Fly to Target Node</div>
       </div>
 
-      {/* Unity Engine Scene Orientation Gizmo Indicator */}
-      <div style={{
-        position: 'absolute',
-        bottom: 6,
-        right: 46,
-        zIndex: 10,
-        fontSize: '0.62rem',
-        fontWeight: 700,
-        letterSpacing: '0.08em',
-        textTransform: 'uppercase',
-        color: 'rgba(148, 163, 184, 0.55)',
-        pointerEvents: 'none',
-        userSelect: 'none',
-      }}>
-        Persp
-      </div>
     </div>
   );
 }
