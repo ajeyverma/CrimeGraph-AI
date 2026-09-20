@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { ViewHelper } from 'three/examples/jsm/helpers/ViewHelper.js';
 import {
   RotateCw, ZoomIn, ZoomOut, Maximize2, Minimize2, Play, Pause,
-  Layers, Eye, EyeOff, RefreshCw, Sparkles, Filter
+  Layers, Eye, EyeOff, RefreshCw, Sparkles, Filter, Check, ChevronDown
 } from 'lucide-react';
 
 export interface Graph3DNode {
@@ -79,10 +79,71 @@ export default function Network3DGraph({
   const mountRef = useRef<HTMLDivElement>(null);
   const [autoRotate, setAutoRotate] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
-  const [activeFilter, setActiveFilter] = useState<string>('ALL');
   const [hoveredNode, setHoveredNode] = useState<Graph3DNode | null>(null);
   const [simRunning, setSimRunning] = useState(false);
   const [sceneReady, setSceneReady] = useState(false);
+
+  // Distinct entity types present in the dataset
+  const availableTypes = useMemo(() => {
+    const types = new Set<string>();
+    nodes.forEach(n => {
+      if (n.nodeType) types.add(n.nodeType);
+    });
+    if (types.size === 0) {
+      ['Person', 'Phone', 'Vehicle', 'Account', 'Case', 'Organization', 'Location'].forEach(t => types.add(t));
+    }
+    return Array.from(types).sort();
+  }, [nodes]);
+
+  // Selected types multi-select state (starts with all available types selected)
+  const [selectedTypes, setSelectedTypes] = useState<Set<string>>(() => new Set(availableTypes));
+  const [filterMenuOpen, setFilterMenuOpen] = useState(false);
+  const filterMenuRef = useRef<HTMLDivElement>(null);
+
+  // Sync initial selection once availableTypes is ready
+  const hasInitializedTypes = useRef(false);
+  useEffect(() => {
+    if (!hasInitializedTypes.current && availableTypes.length > 0) {
+      setSelectedTypes(new Set(availableTypes));
+      hasInitializedTypes.current = true;
+    }
+  }, [availableTypes]);
+
+  // Close filter menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (filterMenuRef.current && !filterMenuRef.current.contains(e.target as Node)) {
+        setFilterMenuOpen(false);
+      }
+    };
+    if (filterMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [filterMenuOpen]);
+
+  const isAllSelected = availableTypes.length > 0 && selectedTypes.size === availableTypes.length;
+  const isNoneSelected = selectedTypes.size === 0;
+
+  const toggleType = (t: string) => {
+    setSelectedTypes(prev => {
+      const next = new Set(prev);
+      if (next.has(t)) {
+        next.delete(t);
+      } else {
+        next.add(t);
+      }
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    setSelectedTypes(new Set(availableTypes));
+  };
+
+  const handleClearAll = () => {
+    setSelectedTypes(new Set());
+  };
 
   // References to keep Three.js state across re-renders
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -107,9 +168,18 @@ export default function Network3DGraph({
   }, []);
 
   // Filter nodes based on active type filter
-  const visibleNodes = nodes.filter(n => activeFilter === 'ALL' || n.nodeType === activeFilter);
-  const visibleNodeIdSet = new Set(visibleNodes.map(n => n.id));
-  const visibleEdges = edges.filter(e => visibleNodeIdSet.has(e.source) && visibleNodeIdSet.has(e.target));
+  const visibleNodes = useMemo(() => {
+    if (selectedTypes.size === 0) {
+      return [];
+    }
+    if (selectedTypes.size === availableTypes.length) {
+      return nodes;
+    }
+    return nodes.filter(n => selectedTypes.has(n.nodeType));
+  }, [nodes, selectedTypes, availableTypes]);
+
+  const visibleNodeIdSet = useMemo(() => new Set(visibleNodes.map(n => n.id)), [visibleNodes]);
+  const visibleEdges = useMemo(() => edges.filter(e => visibleNodeIdSet.has(e.source) && visibleNodeIdSet.has(e.target)), [edges, visibleNodeIdSet]);
 
   // Initialize 3D physics positions randomly in sphere or preserve existing
   useEffect(() => {
@@ -983,55 +1053,195 @@ export default function Network3DGraph({
         </button>
       </div>
 
-      {/* Schema Filter Badges Bar */}
-      <div style={{
+      {/* Schema Filter Dropdown Menu in Top Bar */}
+      <div ref={filterMenuRef} style={{
         position: 'absolute',
         top: 14,
         left: 62,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 6,
-        zIndex: 10,
-        background: 'rgba(15, 23, 42, 0.85)',
-        backdropFilter: 'blur(12px)',
-        padding: '5px 8px',
-        borderRadius: 10,
-        border: '1px solid rgba(255, 255, 255, 0.12)',
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
-        maxWidth: 'calc(100% - 340px)',
-        overflowX: 'auto',
+        zIndex: 25,
       }}>
-        <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 600, paddingRight: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
-          <Filter size={11} /> 3D Filter:
-        </span>
-        {['ALL', 'Person', 'Vehicle', 'Account', 'Case', 'Organization'].map(t => {
-          const isAct = activeFilter === t;
-          const col = TYPE_COLORS[t] || '#38bdf8';
-          return (
-            <button
-              key={t}
-              onClick={() => setActiveFilter(t)}
-              style={{
-                background: isAct ? (t === 'ALL' ? '#38bdf8' : col) : 'rgba(255,255,255,0.06)',
-                color: isAct ? '#0f172a' : '#cbd5e1',
-                border: 'none',
-                borderRadius: 6,
-                padding: '3px 8px',
-                fontSize: '0.7rem',
-                fontWeight: isAct ? 700 : 500,
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                transition: 'all 120ms ease',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {t !== 'ALL' && <span>{TYPE_ICONS[t]}</span>}
-              <span>{t}</span>
-            </button>
-          );
-        })}
+        <button
+          type="button"
+          onClick={() => setFilterMenuOpen(!filterMenuOpen)}
+          style={{
+            height: 30,
+            padding: '0 10px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            background: 'rgba(15, 23, 42, 0.88)',
+            backdropFilter: 'blur(12px)',
+            border: `1px solid ${filterMenuOpen ? 'rgba(56, 189, 248, 0.5)' : 'rgba(255, 255, 255, 0.12)'}`,
+            borderRadius: 8,
+            color: '#e2e8f0',
+            fontSize: '0.75rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+            transition: 'all 150ms ease',
+          }}
+          title="Filter Entities by Type"
+        >
+          <Filter size={13} style={{ color: '#38bdf8' }} />
+          <span>Entity Filters</span>
+          <span style={{
+            fontSize: '0.66rem',
+            padding: '1px 6px',
+            borderRadius: 10,
+            background: isAllSelected
+              ? 'rgba(255,255,255,0.1)'
+              : isNoneSelected
+                ? 'rgba(239, 68, 68, 0.2)'
+                : 'rgba(56, 189, 248, 0.25)',
+            color: isAllSelected
+              ? '#cbd5e1'
+              : isNoneSelected
+                ? '#f87171'
+                : '#38bdf8',
+            fontWeight: 700,
+          }}>
+            {isAllSelected ? 'ALL' : isNoneSelected ? 'NONE' : `${selectedTypes.size} active`}
+          </span>
+          <ChevronDown
+            size={12}
+            style={{
+              color: '#94a3b8',
+              transform: filterMenuOpen ? 'rotate(180deg)' : 'none',
+              transition: 'transform 150ms ease',
+            }}
+          />
+        </button>
+
+        {filterMenuOpen && (
+          <div style={{
+            position: 'absolute',
+            top: 36,
+            left: 0,
+            width: 220,
+            background: 'rgba(15, 23, 42, 0.96)',
+            backdropFilter: 'blur(16px)',
+            border: '1px solid rgba(255, 255, 255, 0.15)',
+            borderRadius: 10,
+            boxShadow: '0 16px 40px rgba(0, 0, 0, 0.65)',
+            padding: '8px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 4,
+            maxHeight: 340,
+            overflowY: 'auto',
+          }}>
+            {/* Header / Quick Actions */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '2px 6px 6px 6px',
+              borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+              fontSize: '0.68rem',
+              color: '#94a3b8',
+              fontWeight: 600,
+            }}>
+              <span>SELECT ENTITIES</span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  type="button"
+                  onClick={handleSelectAll}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#38bdf8',
+                    cursor: 'pointer',
+                    fontSize: '0.68rem',
+                    fontWeight: 600,
+                    padding: 0,
+                  }}
+                >
+                  All
+                </button>
+                <span style={{ color: 'rgba(255,255,255,0.2)' }}>|</span>
+                <button
+                  type="button"
+                  onClick={handleClearAll}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#94a3b8',
+                    cursor: 'pointer',
+                    fontSize: '0.68rem',
+                    fontWeight: 600,
+                    padding: 0,
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+
+            {/* List of entity checkboxes */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4 }}>
+              {availableTypes.map(t => {
+                const isChecked = selectedTypes.has(t);
+                const col = TYPE_COLORS[t] || '#38bdf8';
+                const count = nodes.filter(n => n.nodeType === t).length;
+
+                return (
+                  <div
+                    key={t}
+                    onClick={() => toggleType(t)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '5px 8px',
+                      borderRadius: 6,
+                      background: isChecked ? 'rgba(255, 255, 255, 0.06)' : 'transparent',
+                      cursor: 'pointer',
+                      transition: 'background 120ms ease',
+                      userSelect: 'none',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {/* Checkbox box */}
+                      <div style={{
+                        width: 15,
+                        height: 15,
+                        borderRadius: 4,
+                        border: `1.5px solid ${isChecked ? col : 'rgba(255,255,255,0.3)'}`,
+                        background: isChecked ? col : 'transparent',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        transition: 'all 120ms ease',
+                        flexShrink: 0,
+                      }}>
+                        {isChecked && <Check size={11} color="#0f172a" strokeWidth={3.5} />}
+                      </div>
+
+                      {/* Icon and label */}
+                      <span style={{ fontSize: '0.85rem' }}>{TYPE_ICONS[t] || '•'}</span>
+                      <span style={{
+                        fontSize: '0.76rem',
+                        fontWeight: isChecked ? 600 : 500,
+                        color: isChecked ? '#f8fafc' : '#94a3b8',
+                      }}>
+                        {t}
+                      </span>
+                    </div>
+
+                    {/* Count badge */}
+                    <span style={{
+                      fontSize: '0.68rem',
+                      color: 'rgba(148, 163, 184, 0.7)',
+                      fontWeight: 500,
+                    }}>
+                      {count}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Right Top Corner: Switch to 2D & Fullscreen Buttons */}
@@ -1042,7 +1252,13 @@ export default function Network3DGraph({
         zIndex: 20,
         display: 'flex',
         alignItems: 'center',
-        gap: 8,
+        gap: 6,
+        background: 'rgba(15, 23, 42, 0.88)',
+        backdropFilter: 'blur(12px)',
+        padding: '6px',
+        borderRadius: 10,
+        border: '1px solid rgba(255, 255, 255, 0.12)',
+        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
       }}>
         {onSwitchTo2D && (
           <button
@@ -1050,24 +1266,23 @@ export default function Network3DGraph({
             onClick={onSwitchTo2D}
             title="Switch to 2D Graph View"
             style={{
-              height: 34,
-              padding: '0 12px',
+              height: 30,
+              padding: '0 10px',
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              background: '#ffffff',
-              color: '#0f172a',
-              border: '1px solid #cbd5e1',
-              borderRadius: 8,
-              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.25)',
+              borderRadius: 6,
               cursor: 'pointer',
-              fontSize: '0.78rem',
+              transition: 'all 150ms ease',
+              background: 'rgba(255, 255, 255, 0.05)',
+              color: '#e2e8f0',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              fontSize: '0.75rem',
               fontWeight: 600,
-              transition: 'all 0.15s ease',
               whiteSpace: 'nowrap',
             }}
           >
-            <Layers size={14} style={{ color: '#0284c7' }} />
+            <Layers size={14} style={{ color: '#38bdf8' }} />
             <span>Switch to 2D</span>
           </button>
         )}
@@ -1078,23 +1293,23 @@ export default function Network3DGraph({
             onClick={onToggleFullscreen}
             title={isFullscreen ? 'Exit Fullscreen (Esc / F11)' : 'Full Screen (F11)'}
             style={{
-              width: 34,
-              height: 34,
+              width: 30,
+              height: 30,
+              padding: 0,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              background: '#ffffff',
-              color: '#0f172a',
-              border: '1px solid #cbd5e1',
-              borderRadius: 8,
-              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.25)',
+              borderRadius: 6,
               cursor: 'pointer',
-              padding: 0,
+              transition: 'all 150ms ease',
+              background: isFullscreen ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+              color: isFullscreen ? '#38bdf8' : '#94a3b8',
+              border: isFullscreen ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
+              boxShadow: isFullscreen ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
               flexShrink: 0,
-              transition: 'all 0.15s ease',
             }}
           >
-            {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
           </button>
         )}
       </div>
