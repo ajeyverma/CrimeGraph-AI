@@ -7,7 +7,7 @@ import {
   Layers, Eye, EyeOff, RefreshCw, Sparkles, Filter, Check, ChevronDown,
   Search, X, Globe, RotateCcw, Sun, Moon,
   User, Phone as PhoneIcon, Car, Building2, MapPin, CreditCard, Briefcase, Package, Calendar, Circle,
-  Network, Box, Info
+  Network, Box, Info, LayoutGrid, Disc, Shuffle
 } from 'lucide-react';
 
 export interface Graph3DNode {
@@ -60,6 +60,19 @@ const TYPE_COLORS: Record<string, string> = {
   Event: '#ec4899',        // Pink
 };
 
+const TYPE_THREE_COLORS: Record<string, THREE.Color> = {
+  Person: new THREE.Color('#3b82f6'),
+  Phone: new THREE.Color('#10b981'),
+  Vehicle: new THREE.Color('#f97316'),
+  Organization: new THREE.Color('#8b5cf6'),
+  Location: new THREE.Color('#ef4444'),
+  Account: new THREE.Color('#f59e0b'),
+  Case: new THREE.Color('#06b6d4'),
+  Evidence: new THREE.Color('#6366f1'),
+  Event: new THREE.Color('#ec4899'),
+};
+const DEFAULT_PARTICLE_COLOR = new THREE.Color('#38bdf8');
+
 const renderEntityIcon = (type: string, size = 14, color?: string) => {
   const iconProps = { size, color: color || TYPE_COLORS[type] || '#94a3b8', strokeWidth: 2 };
   switch (type) {
@@ -75,6 +88,176 @@ const renderEntityIcon = (type: string, size = 14, color?: string) => {
     default: return <Circle {...iconProps} />;
   }
 };
+
+export type Layout3DType = 'spherical' | 'concentric' | 'cylinder' | 'grid' | 'cone';
+
+export interface Layout3DOption {
+  id: Layout3DType;
+  label: string;
+  badge: string;
+  description: string;
+  icon: React.ComponentType<{ size?: number; color?: string; style?: React.CSSProperties }>;
+}
+
+export const LAYOUT_3D_OPTIONS: Layout3DOption[] = [
+  {
+    id: 'spherical',
+    label: 'Spherical Orbit',
+    badge: 'Present',
+    description: 'Present default planetary distribution around the central cyber globe',
+    icon: Globe,
+  },
+  {
+    id: 'concentric',
+    label: 'Concentric Risk Spheres',
+    badge: 'Risk Orbit',
+    description: 'Nested 3D danger spheres arranged by risk assessment level',
+    icon: Disc,
+  },
+  {
+    id: 'cylinder',
+    label: 'Helical Cyber Cylinder',
+    badge: 'DNA Spiral',
+    description: 'Vertical 3D double helix spiral for timeline & communication analysis',
+    icon: Shuffle,
+  },
+  {
+    id: 'grid',
+    label: '3D Matrix Grid',
+    badge: 'Cube Lattice',
+    description: 'Structured 3D cubic volumetric lattice coordinates',
+    icon: LayoutGrid,
+  },
+  {
+    id: 'cone',
+    label: 'Hierarchical Pyramid',
+    badge: 'Tree Cone',
+    description: 'Tiered pyramidal cone branching from cases & key targets downward',
+    icon: Network,
+  },
+];
+
+export function calculateLayoutPositions(
+  layout: Layout3DType,
+  nodes: Graph3DNode[],
+  edges: Graph3DEdge[],
+  selectedNodeId?: string | null
+): Map<string, { x: number; y: number; z: number }> {
+  const positions = new Map<string, { x: number; y: number; z: number }>();
+  const count = nodes.length || 1;
+  const radius = Math.max(130, Math.cbrt(count) * 65);
+
+  switch (layout) {
+    case 'spherical': {
+      nodes.forEach((n, i) => {
+        const phi = Math.acos(1 - 2 * (i + 0.5) / count);
+        const theta = Math.PI * (1 + Math.sqrt(5)) * (i + 0.5);
+        const r = radius * (0.65 + (i % 3) * 0.18);
+        positions.set(n.id, {
+          x: r * Math.sin(phi) * Math.cos(theta),
+          y: r * Math.sin(phi) * Math.sin(theta),
+          z: r * Math.cos(phi),
+        });
+      });
+      break;
+    }
+
+    case 'concentric': {
+      nodes.forEach((n, i) => {
+        const risk = Number(n.risk_score || 0);
+        const isHigh = risk >= 0.7 || n.flagged;
+        const isMed = risk >= 0.4 && risk < 0.7;
+
+        const r = isHigh ? 100 : isMed ? 190 : 290;
+        const phi = Math.acos(1 - 2 * (i + 0.5) / count);
+        const theta = Math.PI * (1 + Math.sqrt(5)) * (i + 0.5);
+
+        positions.set(n.id, {
+          x: r * Math.sin(phi) * Math.cos(theta),
+          y: r * Math.sin(phi) * Math.sin(theta) * 0.8,
+          z: r * Math.cos(phi),
+        });
+      });
+      break;
+    }
+
+    case 'cylinder': {
+      const height = 360;
+      const cylRadius = 140;
+      nodes.forEach((n, i) => {
+        const strand = i % 2 === 0 ? 0 : Math.PI;
+        const progress = i / count;
+        const angle = progress * Math.PI * 6 + strand;
+        const y = (progress - 0.5) * height;
+        positions.set(n.id, {
+          x: cylRadius * Math.cos(angle),
+          y,
+          z: cylRadius * Math.sin(angle),
+        });
+      });
+      break;
+    }
+
+    case 'grid': {
+      const gridSize = Math.ceil(Math.cbrt(count));
+      const spacing = 95;
+      const offset = ((gridSize - 1) * spacing) / 2;
+
+      nodes.forEach((n, i) => {
+        const gx = i % gridSize;
+        const gy = Math.floor(i / gridSize) % gridSize;
+        const gz = Math.floor(i / (gridSize * gridSize));
+
+        positions.set(n.id, {
+          x: gx * spacing - offset,
+          y: gy * spacing - offset,
+          z: gz * spacing - offset,
+        });
+      });
+      break;
+    }
+
+    case 'cone': {
+      const levels: Record<string, number> = {
+        Case: 0,
+        Person: 1,
+        Organization: 2,
+        Vehicle: 3,
+        Account: 3,
+        Phone: 4,
+        Location: 4,
+        Evidence: 5,
+        Event: 5,
+      };
+
+      const groups = new Map<number, Graph3DNode[]>();
+      nodes.forEach(n => {
+        const lvl = levels[n.nodeType] ?? 2;
+        if (!groups.has(lvl)) groups.set(lvl, []);
+        groups.get(lvl)!.push(n);
+      });
+
+      const maxLevel = 5;
+      const totalHeight = 340;
+
+      groups.forEach((groupNodes, lvl) => {
+        const y = totalHeight / 2 - (lvl / maxLevel) * totalHeight;
+        const ringR = 30 + (lvl / maxLevel) * 220;
+        groupNodes.forEach((n, idx) => {
+          const angle = (idx / groupNodes.length) * Math.PI * 2;
+          positions.set(n.id, {
+            x: ringR * Math.cos(angle),
+            y,
+            z: ringR * Math.sin(angle),
+          });
+        });
+      });
+      break;
+    }
+  }
+
+  return positions;
+}
 
 const MAX_PARTICLES = 200;
 
@@ -126,6 +309,33 @@ export default function Network3DGraph({
   const [sceneReady, setSceneReady] = useState(false);
   const [showNavGuide, setShowNavGuide] = useState(false);
   const [showDisclaimer, setShowDisclaimer] = useState(false);
+  const [activeLayout, setActiveLayout] = useState<Layout3DType>('spherical');
+  const activeLayoutRef = useRef<Layout3DType>('spherical');
+  const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
+  const layoutMenuRef = useRef<HTMLDivElement>(null);
+  const layoutAnimRef = useRef<number | null>(null);
+
+  // Close layout menu on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (layoutMenuRef.current && !layoutMenuRef.current.contains(e.target as Node)) {
+        setLayoutMenuOpen(false);
+      }
+    };
+    if (layoutMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [layoutMenuOpen]);
+
+  // If layout is not spherical orbit, automatically disable and pause 3D physics
+  useEffect(() => {
+    activeLayoutRef.current = activeLayout;
+    if (activeLayout !== 'spherical') {
+      setSimRunning(false);
+      simRunningRef.current = false;
+    }
+  }, [activeLayout]);
 
   useEffect(() => {
     simRunningRef.current = simRunning;
@@ -141,11 +351,12 @@ export default function Network3DGraph({
   const gridRef = useRef<THREE.GridHelper | null>(null);
 
   useEffect(() => {
-    showGlobeRef.current = showGlobe;
+    const isGlobeVisible = showGlobe && activeLayout === 'spherical';
+    showGlobeRef.current = isGlobeVisible;
     if (cyberGlobeRef.current) {
-      cyberGlobeRef.current.visible = showGlobe;
+      cyberGlobeRef.current.visible = isGlobeVisible;
     }
-  }, [showGlobe]);
+  }, [showGlobe, activeLayout]);
 
   useEffect(() => {
     globeRotatingRef.current = globeRotating;
@@ -191,22 +402,11 @@ export default function Network3DGraph({
       }
 
       // Update moving data flow particles for light/dark theme visibility
-      if (particleMatRef.current && particleGeoRef.current) {
+      if (particleMatRef.current) {
         particleMatRef.current.blending = isLightTheme ? THREE.NormalBlending : THREE.AdditiveBlending;
         particleMatRef.current.opacity = isLightTheme ? 0.95 : 0.85;
-        particleMatRef.current.size = isLightTheme ? 7.0 : 5.0;
+        particleMatRef.current.size = isLightTheme ? 7.0 : 5.5;
         particleMatRef.current.needsUpdate = true;
-
-        const colAttr = particleGeoRef.current.attributes.color as THREE.BufferAttribute;
-        if (colAttr) {
-          const r = isLightTheme ? 0.01 : 0.25;
-          const g = isLightTheme ? 0.35 : 0.82;
-          const b = isLightTheme ? 0.85 : 1.0;
-          for (let i = 0; i < MAX_PARTICLES; i++) {
-            colAttr.setXYZ(i, r, g, b);
-          }
-          colAttr.needsUpdate = true;
-        }
       }
     }
   }, [isLightTheme]);
@@ -284,6 +484,9 @@ export default function Network3DGraph({
   const nodeMeshes = useRef<Map<string, THREE.Mesh>>(new Map());
   const haloMeshes = useRef<Map<string, THREE.Mesh>>(new Map());
   const edgeLineSegments = useRef<THREE.LineSegments | null>(null);
+  const highlightedEdgeSegments = useRef<THREE.LineSegments | null>(null);
+  const selectedNodeIdRef = useRef<string | null | undefined>(selectedNodeId);
+  const connectedEdgesRef = useRef<Graph3DEdge[]>([]);
   const particleSystem = useRef<THREE.Points | null>(null);
   const particleMatRef = useRef<THREE.PointsMaterial | null>(null);
   const particleGeoRef = useRef<THREE.BufferGeometry | null>(null);
@@ -410,6 +613,156 @@ export default function Network3DGraph({
 
   const visibleEdgesRef = useRef(visibleEdges);
   visibleEdgesRef.current = visibleEdges;
+
+  // Smooth 3D Layout Transition
+  const apply3DLayout = useCallback((layoutId: Layout3DType) => {
+    setActiveLayout(layoutId);
+    setLayoutMenuOpen(false);
+
+    // If layout is not spherical orbit, immediately disable and pause 3D physics and hide cyber globe
+    if (layoutId !== 'spherical') {
+      setSimRunning(false);
+      simRunningRef.current = false;
+    }
+    if (cyberGlobeRef.current) {
+      cyberGlobeRef.current.visible = layoutId === 'spherical' && showGlobe;
+    }
+
+    const targetPositions = calculateLayoutPositions(layoutId, visibleNodes, visibleEdges, selectedNodeId);
+    const sim = simNodes.current;
+
+    if (layoutAnimRef.current) {
+      cancelAnimationFrame(layoutAnimRef.current);
+    }
+
+    const startPositions = new Map<string, { x: number; y: number; z: number }>();
+    visibleNodes.forEach(n => {
+      const cur = sim.get(n.id) || { x: 0, y: 0, z: 0 };
+      startPositions.set(n.id, { x: cur.x, y: cur.y, z: cur.z });
+    });
+
+    let step = 0;
+    const totalSteps = 45;
+
+    const transitionAnim = () => {
+      step++;
+      const progress = Math.min(step / totalSteps, 1);
+      const ease = progress < 0.5
+        ? 4 * progress * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+
+      visibleNodes.forEach(n => {
+        const start = startPositions.get(n.id);
+        const target = targetPositions.get(n.id);
+        const cur = sim.get(n.id);
+
+        if (start && target && cur) {
+          cur.x = start.x + (target.x - start.x) * ease;
+          cur.y = start.y + (target.y - start.y) * ease;
+          cur.z = start.z + (target.z - start.z) * ease;
+          cur.vx = 0;
+          cur.vy = 0;
+          cur.vz = 0;
+
+          const mesh = nodeMeshes.current.get(n.id);
+          if (mesh) mesh.position.set(cur.x, cur.y, cur.z);
+
+          const halo = haloMeshes.current.get(n.id);
+          if (halo) halo.position.set(cur.x, cur.y, cur.z);
+
+          const sprite = labelSprites.current.get(n.id);
+          if (sprite) {
+            const isSel = selectedNodeId === n.id;
+            sprite.position.set(cur.x, cur.y + (isSel ? 18 : 14), cur.z);
+          }
+        }
+      });
+
+      if (edgeLineSegments.current) {
+        const posAttr = edgeLineSegments.current.geometry.attributes.position as THREE.BufferAttribute;
+        visibleEdgesRef.current.forEach((e, i) => {
+          const nA = sim.get(e.source);
+          const nB = sim.get(e.target);
+          if (nA && nB && posAttr.count > i * 2 + 1) {
+            posAttr.setXYZ(i * 2, nA.x, nA.y, nA.z);
+            posAttr.setXYZ(i * 2 + 1, nB.x, nB.y, nB.z);
+          }
+        });
+        posAttr.needsUpdate = true;
+      }
+
+      if (highlightedEdgeSegments.current) {
+        const hPosAttr = highlightedEdgeSegments.current.geometry.attributes.position as THREE.BufferAttribute;
+        connectedEdgesRef.current.forEach((e, i) => {
+          const nA = sim.get(e.source);
+          const nB = sim.get(e.target);
+          if (nA && nB && hPosAttr.count > i * 2 + 1) {
+            hPosAttr.setXYZ(i * 2, nA.x, nA.y, nA.z);
+            hPosAttr.setXYZ(i * 2 + 1, nB.x, nB.y, nB.z);
+          }
+        });
+        hPosAttr.needsUpdate = true;
+      }
+
+      if (step < totalSteps) {
+        layoutAnimRef.current = requestAnimationFrame(transitionAnim);
+      } else {
+        layoutAnimRef.current = null;
+      }
+    };
+
+    transitionAnim();
+  }, [visibleNodes, visibleEdges, selectedNodeId, onSelectNode]);
+
+  // Set of node IDs directly connected to selectedNodeId
+  const connectedNeighbors = useMemo(() => {
+    if (!selectedNodeId) return new Set<string>();
+    const set = new Set<string>();
+    visibleEdges.forEach(e => {
+      if (e.source === selectedNodeId) set.add(e.target);
+      if (e.target === selectedNodeId) set.add(e.source);
+    });
+    return set;
+  }, [selectedNodeId, visibleEdges]);
+
+  // Edges directly connected to selectedNodeId
+  const connectedEdges = useMemo(() => {
+    if (!selectedNodeId) return [];
+    return visibleEdges.filter(e => e.source === selectedNodeId || e.target === selectedNodeId);
+  }, [selectedNodeId, visibleEdges]);
+
+  useEffect(() => {
+    selectedNodeIdRef.current = selectedNodeId;
+  }, [selectedNodeId]);
+
+  useEffect(() => {
+    connectedEdgesRef.current = connectedEdges;
+  }, [connectedEdges]);
+
+  // Fast node lookup map
+  const nodeMap = useMemo(() => new Map(nodes.map(n => [n.id, n])), [nodes]);
+  const nodeMapRef = useRef(nodeMap);
+  useEffect(() => {
+    nodeMapRef.current = nodeMap;
+  }, [nodeMap]);
+
+  // Precomputed source & target colors for each edge for high-performance 60fps particle coloring
+  const edgeColorsMap = useMemo(() => {
+    const map = new Map<string, { c1: THREE.Color; c2: THREE.Color }>();
+    visibleEdges.forEach(e => {
+      const srcNode = nodeMap.get(e.source);
+      const tgtNode = nodeMap.get(e.target);
+      const c1 = (srcNode?.nodeType && TYPE_THREE_COLORS[srcNode.nodeType]) || DEFAULT_PARTICLE_COLOR;
+      const c2 = (tgtNode?.nodeType && TYPE_THREE_COLORS[tgtNode.nodeType]) || c1;
+      map.set(`${e.source}_${e.target}`, { c1, c2 });
+    });
+    return map;
+  }, [visibleEdges, nodeMap]);
+
+  const edgeColorsRef = useRef(edgeColorsMap);
+  useEffect(() => {
+    edgeColorsRef.current = edgeColorsMap;
+  }, [edgeColorsMap]);
 
   // Initialize 3D physics positions randomly in sphere or preserve existing
   useEffect(() => {
@@ -792,8 +1145,8 @@ export default function Network3DGraph({
       const delta = Math.min((currentTime - lastTime) / 1000, 0.1);
       lastTime = currentTime;
 
-      // Force simulation step (Spring-Embedder vector forces)
-      if (simRunningRef.current) {
+      // Force simulation step (Spring-Embedder vector forces - disabled for non-spherical layouts)
+      if (simRunningRef.current && activeLayoutRef.current === 'spherical') {
         const sim = simNodes.current;
         const kCenter = 0.0018;
         const kRepel = 24000;
@@ -907,8 +1260,29 @@ export default function Network3DGraph({
         posAttr.needsUpdate = true;
       }
 
-      // Update Traveling Data Particles
-      const curEdges = visibleEdgesRef.current;
+      // Update Highlighted Connected 3D Edge Lines
+      if (highlightedEdgeSegments.current) {
+        const hPosAttr = highlightedEdgeSegments.current.geometry.attributes.position as THREE.BufferAttribute;
+        const sim = simNodes.current;
+
+        connectedEdgesRef.current.forEach((e, i) => {
+          const nA = sim.get(e.source);
+          const nB = sim.get(e.target);
+          if (nA && nB && hPosAttr.count > i * 2 + 1) {
+            hPosAttr.setXYZ(i * 2, nA.x, nA.y, nA.z);
+            hPosAttr.setXYZ(i * 2 + 1, nB.x, nB.y, nB.z);
+          }
+        });
+        hPosAttr.needsUpdate = true;
+      }
+
+      // Update Traveling Data Particles (prioritize connected paths when a node is selected)
+      const allEdges = visibleEdgesRef.current;
+      const activeSelectedId = selectedNodeIdRef.current;
+      const connEdges = activeSelectedId
+        ? allEdges.filter(e => e.source === activeSelectedId || e.target === activeSelectedId)
+        : allEdges;
+      const curEdges = (activeSelectedId && connEdges.length > 0) ? connEdges : allEdges;
       if (particleSystem.current) {
         if (!curEdges || curEdges.length === 0) {
           particleSystem.current.visible = false;
@@ -916,6 +1290,8 @@ export default function Network3DGraph({
           particleSystem.current.visible = true;
           const sim = simNodes.current;
           const posAttr = particleSystem.current.geometry.attributes.position as THREE.BufferAttribute;
+          const colAttr = particleSystem.current.geometry.attributes.color as THREE.BufferAttribute;
+          const edgeColors = edgeColorsRef.current;
 
           particleEdges.forEach((p, i) => {
             const edge = curEdges[p.edgeIndex % curEdges.length];
@@ -939,11 +1315,24 @@ export default function Network3DGraph({
               const pz = nA.z + (nB.z - nA.z) * t;
 
               posAttr.setXYZ(i, px, py, pz);
+
+              // Dynamic multi-color based on connected entity types of this edge
+              if (colAttr) {
+                const edgeCol = edgeColors.get(`${edge.source}_${edge.target}`) ||
+                                edgeColors.get(`${edge.target}_${edge.source}`);
+                if (edgeCol) {
+                  const pr = edgeCol.c1.r + (edgeCol.c2.r - edgeCol.c1.r) * t;
+                  const pg = edgeCol.c1.g + (edgeCol.c2.g - edgeCol.c1.g) * t;
+                  const pb = edgeCol.c1.b + (edgeCol.c2.b - edgeCol.c1.b) * t;
+                  colAttr.setXYZ(i, pr, pg, pb);
+                }
+              }
             } else {
               posAttr.setXYZ(i, 99999, 99999, 99999);
             }
           });
           posAttr.needsUpdate = true;
+          if (colAttr) colAttr.needsUpdate = true;
         }
       }
 
@@ -1043,7 +1432,15 @@ export default function Network3DGraph({
     if (edgeLineSegments.current) {
       scene.remove(edgeLineSegments.current);
       edgeLineSegments.current.geometry.dispose();
+      (edgeLineSegments.current.material as THREE.Material).dispose();
       edgeLineSegments.current = null;
+    }
+
+    if (highlightedEdgeSegments.current) {
+      scene.remove(highlightedEdgeSegments.current);
+      highlightedEdgeSegments.current.geometry.dispose();
+      (highlightedEdgeSegments.current.material as THREE.Material).dispose();
+      highlightedEdgeSegments.current = null;
     }
 
     // Hide particles immediately if no edges are visible
@@ -1068,19 +1465,47 @@ export default function Network3DGraph({
     visibleNodes.forEach(node => {
       const colorHex = TYPE_COLORS[node.nodeType] || '#64748b';
       const isSelected = selectedNodeId === node.id;
+      const isConnectedNeighbor = Boolean(selectedNodeId && connectedNeighbors.has(node.id));
+      const isDimmed = Boolean(selectedNodeId && !isSelected && !isConnectedNeighbor);
       const isHighRisk = Number(node.risk_score || 0) >= 0.7 || node.flagged;
+
+      let nodeOpacity = 1.0;
+      let emissiveIntensity = 0.25;
+      let emissiveColor = new THREE.Color(colorHex);
+      let scale = 1.0;
+
+      if (isSelected) {
+        scale = 1.65;
+        emissiveColor = new THREE.Color(isLightTheme ? '#2563eb' : '#38bdf8');
+        emissiveIntensity = 0.85;
+        nodeOpacity = 1.0;
+      } else if (isConnectedNeighbor) {
+        scale = 1.25;
+        emissiveColor = new THREE.Color(isLightTheme ? '#d97706' : '#fbbf24');
+        emissiveIntensity = 0.6;
+        nodeOpacity = 1.0;
+      } else if (isDimmed) {
+        scale = 0.7;
+        emissiveColor = new THREE.Color(0x000000);
+        emissiveIntensity = 0.0;
+        nodeOpacity = isLightTheme ? 0.16 : 0.12;
+      } else {
+        scale = isHighRisk ? 1.25 : 1.0;
+        emissiveIntensity = 0.25;
+        nodeOpacity = 1.0;
+      }
 
       const nodeMat = new THREE.MeshPhongMaterial({
         color: new THREE.Color(colorHex),
-        emissive: new THREE.Color(colorHex),
-        emissiveIntensity: isSelected ? 0.6 : 0.25,
-        shininess: 90,
+        emissive: emissiveColor,
+        emissiveIntensity,
+        shininess: isDimmed ? 5 : 90,
+        transparent: isDimmed,
+        opacity: nodeOpacity,
       });
 
       const mesh = new THREE.Mesh(sphereGeo, nodeMat);
       mesh.userData = { id: node.id, node };
-
-      const scale = isSelected ? 1.5 : isHighRisk ? 1.25 : 1.0;
       mesh.scale.set(scale, scale, scale);
 
       const simPos = simNodes.current.get(node.id) || { x: 0, y: 0, z: 0 };
@@ -1089,29 +1514,61 @@ export default function Network3DGraph({
       scene.add(mesh);
       nodeMeshes.current.set(node.id, mesh);
 
-      // Add Glowing Halo Ring around High-Risk or Selected nodes
-      if (isHighRisk || isSelected) {
-        const haloMat = new THREE.MeshBasicMaterial({
-          color: new THREE.Color(isSelected ? '#38bdf8' : '#ef4444'),
-          side: THREE.DoubleSide,
-          transparent: true,
-          opacity: 0.65,
-        });
-        const halo = new THREE.Mesh(haloGeo, haloMat);
-        halo.position.copy(mesh.position);
-        scene.add(halo);
-        haloMeshes.current.set(node.id, halo);
+      // Add Glowing Halo Ring around High-Risk or Selected/Connected nodes
+      // Dimmed nodes NEVER show halos so visual focus stays strictly on selected & connections
+      if (!isDimmed) {
+        if (isSelected) {
+          const haloMat = new THREE.MeshBasicMaterial({
+            color: new THREE.Color(isLightTheme ? '#2563eb' : '#38bdf8'),
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.9,
+          });
+          const halo = new THREE.Mesh(haloGeo, haloMat);
+          halo.scale.set(1.4, 1.4, 1.4);
+          halo.position.copy(mesh.position);
+          scene.add(halo);
+          haloMeshes.current.set(node.id, halo);
+        } else if (isConnectedNeighbor) {
+          const haloMat = new THREE.MeshBasicMaterial({
+            color: new THREE.Color(isLightTheme ? '#d97706' : '#fbbf24'),
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.75,
+          });
+          const halo = new THREE.Mesh(haloGeo, haloMat);
+          halo.scale.set(1.15, 1.15, 1.15);
+          halo.position.copy(mesh.position);
+          scene.add(halo);
+          haloMeshes.current.set(node.id, halo);
+        } else if (isHighRisk) {
+          const haloMat = new THREE.MeshBasicMaterial({
+            color: new THREE.Color('#ef4444'),
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.65,
+          });
+          const halo = new THREE.Mesh(haloGeo, haloMat);
+          halo.position.copy(mesh.position);
+          scene.add(halo);
+          haloMeshes.current.set(node.id, halo);
+        }
       }
 
       // Create Floating 3D Text Billboard Label
-      if (showLabels) {
+      // Skip labels on dimmed nodes so the space is crystal clear
+      if (showLabels && !isDimmed) {
         const canvas = document.createElement('canvas');
         canvas.width = 256;
         canvas.height = 64;
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          ctx.font = 'bold 24px "Inter", sans-serif';
-          ctx.fillStyle = isSelected ? (isLightTheme ? '#0284c7' : '#38bdf8') : (isLightTheme ? '#0f172a' : '#f8fafc');
+          ctx.font = isSelected ? 'bold 26px "Inter", sans-serif' : 'bold 24px "Inter", sans-serif';
+          ctx.fillStyle = isSelected
+            ? (isLightTheme ? '#0284c7' : '#38bdf8')
+            : isConnectedNeighbor
+            ? (isLightTheme ? '#b45309' : '#fde047')
+            : (isLightTheme ? '#0f172a' : '#f8fafc');
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
           ctx.shadowColor = isLightTheme ? 'rgba(255,255,255,0.95)' : 'rgba(0,0,0,0.9)';
@@ -1122,10 +1579,15 @@ export default function Network3DGraph({
 
           const texture = new THREE.CanvasTexture(canvas);
           texture.minFilter = THREE.LinearFilter;
-          const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true, opacity: isSelected ? 1 : 0.85 });
+          const spriteMat = new THREE.SpriteMaterial({
+            map: texture,
+            transparent: true,
+            opacity: isSelected ? 1.0 : isConnectedNeighbor ? 0.95 : 0.85,
+          });
           const sprite = new THREE.Sprite(spriteMat);
-          sprite.scale.set(38, 9.5, 1);
-          sprite.position.set(simPos.x, simPos.y + 14, simPos.z);
+          const spriteYOffset = isSelected ? 18 : 14;
+          sprite.scale.set(isSelected ? 42 : 38, isSelected ? 10.5 : 9.5, 1);
+          sprite.position.set(simPos.x, simPos.y + spriteYOffset, simPos.z);
 
           scene.add(sprite);
           labelSprites.current.set(node.id, sprite);
@@ -1133,10 +1595,11 @@ export default function Network3DGraph({
       }
     });
 
-    // Create 3D Edge Line Segments
+    // Create 3D Edge Line Segments (Base Layer - Dimmed when node is selected)
     if (visibleEdges.length > 0) {
       const linePositions = new Float32Array(visibleEdges.length * 6);
       const lineColors = new Float32Array(visibleEdges.length * 6);
+      const isDimmedState = Boolean(selectedNodeId);
 
       visibleEdges.forEach((e, i) => {
         const nA = simNodes.current.get(e.source) || { x: 0, y: 0, z: 0 };
@@ -1169,7 +1632,7 @@ export default function Network3DGraph({
       const lineMat = new THREE.LineBasicMaterial({
         vertexColors: true,
         transparent: true,
-        opacity: 0.45,
+        opacity: isDimmedState ? (isLightTheme ? 0.08 : 0.05) : 0.45,
         linewidth: 1,
       });
 
@@ -1177,7 +1640,50 @@ export default function Network3DGraph({
       scene.add(lines);
       edgeLineSegments.current = lines;
     }
-  }, [visibleNodes, visibleEdges, selectedNodeId, showLabels, getNodeLabel, isLightTheme, sceneReady]);
+
+    // Create Highlighted Connected 3D Edge Segments (Top Layer - Bright and Vibrant)
+    if (selectedNodeId && connectedEdges.length > 0) {
+      const hPositions = new Float32Array(connectedEdges.length * 6);
+      const hColors = new Float32Array(connectedEdges.length * 6);
+
+      connectedEdges.forEach((e, i) => {
+        const nA = simNodes.current.get(e.source) || { x: 0, y: 0, z: 0 };
+        const nB = simNodes.current.get(e.target) || { x: 0, y: 0, z: 0 };
+
+        hPositions[i * 6] = nA.x;
+        hPositions[i * 6 + 1] = nA.y;
+        hPositions[i * 6 + 2] = nA.z;
+
+        hPositions[i * 6 + 3] = nB.x;
+        hPositions[i * 6 + 4] = nB.y;
+        hPositions[i * 6 + 5] = nB.z;
+
+        const hlColor = new THREE.Color(isLightTheme ? 0x2563eb : 0x38bdf8);
+        hColors[i * 6] = hlColor.r;
+        hColors[i * 6 + 1] = hlColor.g;
+        hColors[i * 6 + 2] = hlColor.b;
+
+        hColors[i * 6 + 3] = isLightTheme ? 0.15 : 0.9;
+        hColors[i * 6 + 4] = isLightTheme ? 0.45 : 0.95;
+        hColors[i * 6 + 5] = isLightTheme ? 0.95 : 1.0;
+      });
+
+      const hGeo = new THREE.BufferGeometry();
+      hGeo.setAttribute('position', new THREE.BufferAttribute(hPositions, 3));
+      hGeo.setAttribute('color', new THREE.BufferAttribute(hColors, 3));
+
+      const hMat = new THREE.LineBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.95,
+        linewidth: 2,
+      });
+
+      const hLines = new THREE.LineSegments(hGeo, hMat);
+      scene.add(hLines);
+      highlightedEdgeSegments.current = hLines;
+    }
+  }, [visibleNodes, visibleEdges, selectedNodeId, connectedNeighbors, connectedEdges, showLabels, getNodeLabel, isLightTheme, sceneReady, activeLayout]);
 
   // Update controls auto-rotate state
   useEffect(() => {
@@ -1269,56 +1775,10 @@ export default function Network3DGraph({
           {showLabels ? <Eye size={14} /> : <EyeOff size={14} />}
         </button>
 
-        {/* Physics toggle */}
-        <button
-          onClick={() => setSimRunning(!simRunning)}
-          style={{
-            width: 30,
-            height: 30,
-            padding: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: 6,
-            cursor: 'pointer',
-            transition: 'all 150ms ease',
-            background: simRunning ? 'rgba(56, 189, 248, 0.25)' : isLightTheme ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)',
-            color: simRunning ? '#0284c7' : isLightTheme ? '#64748b' : '#94a3b8',
-            border: simRunning ? '1px solid rgba(56, 189, 248, 0.6)' : isLightTheme ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
-            boxShadow: simRunning ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
-          }}
-          title={simRunning ? 'Pause 3D Physics (Static)' : 'Resume 3D Physics'}
-        >
-          <Sparkles size={14} />
-        </button>
-
-        {/* Globe Enable / Disable */}
-        <button
-          onClick={() => setShowGlobe(!showGlobe)}
-          style={{
-            width: 30,
-            height: 30,
-            padding: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: 6,
-            cursor: 'pointer',
-            transition: 'all 150ms ease',
-            background: showGlobe ? 'rgba(56, 189, 248, 0.25)' : isLightTheme ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)',
-            color: showGlobe ? '#0284c7' : isLightTheme ? '#64748b' : '#94a3b8',
-            border: showGlobe ? '1px solid rgba(56, 189, 248, 0.6)' : isLightTheme ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
-            boxShadow: showGlobe ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
-          }}
-          title={showGlobe ? 'Disable Cyber Globe' : 'Enable Cyber Globe'}
-        >
-          <Globe size={14} />
-        </button>
-
-        {/* Globe Auto-Rotation Toggle (available when globe is enabled) */}
-        {showGlobe && (
+        {/* Physics toggle (only available in spherical orbit layout) */}
+        {activeLayout === 'spherical' && (
           <button
-            onClick={() => setGlobeRotating(!globeRotating)}
+            onClick={() => setSimRunning(!simRunning)}
             style={{
               width: 30,
               height: 30,
@@ -1329,15 +1789,68 @@ export default function Network3DGraph({
               borderRadius: 6,
               cursor: 'pointer',
               transition: 'all 150ms ease',
-              background: globeRotating ? 'rgba(56, 189, 248, 0.25)' : isLightTheme ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)',
-              color: globeRotating ? '#0284c7' : isLightTheme ? '#64748b' : '#94a3b8',
-              border: globeRotating ? '1px solid rgba(56, 189, 248, 0.6)' : isLightTheme ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
-              boxShadow: globeRotating ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
+              background: simRunning ? 'rgba(56, 189, 248, 0.25)' : isLightTheme ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)',
+              color: simRunning ? '#0284c7' : isLightTheme ? '#64748b' : '#94a3b8',
+              border: simRunning ? '1px solid rgba(56, 189, 248, 0.6)' : isLightTheme ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
+              boxShadow: simRunning ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
             }}
-            title={globeRotating ? 'Pause Globe Auto-Rotation' : 'Start Globe Auto-Rotation'}
+            title={simRunning ? 'Pause 3D Physics (Static)' : 'Resume 3D Physics'}
           >
-            <RotateCcw size={14} style={{ transform: globeRotating ? 'rotate(-45deg)' : 'none', transition: 'transform 200ms ease' }} />
+            <Sparkles size={14} />
           </button>
+        )}
+
+        {/* Globe Controls (only visible when in spherical orbit layout) */}
+        {activeLayout === 'spherical' && (
+          <>
+            {/* Globe Enable / Disable */}
+            <button
+              onClick={() => setShowGlobe(!showGlobe)}
+              style={{
+                width: 30,
+                height: 30,
+                padding: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 6,
+                cursor: 'pointer',
+                transition: 'all 150ms ease',
+                background: showGlobe ? 'rgba(56, 189, 248, 0.25)' : isLightTheme ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)',
+                color: showGlobe ? '#0284c7' : isLightTheme ? '#64748b' : '#94a3b8',
+                border: showGlobe ? '1px solid rgba(56, 189, 248, 0.6)' : isLightTheme ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
+                boxShadow: showGlobe ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
+              }}
+              title={showGlobe ? 'Disable Cyber Globe' : 'Enable Cyber Globe'}
+            >
+              <Globe size={14} />
+            </button>
+
+            {/* Globe Auto-Rotation Toggle (available when globe is enabled) */}
+            {showGlobe && (
+              <button
+                onClick={() => setGlobeRotating(!globeRotating)}
+                style={{
+                  width: 30,
+                  height: 30,
+                  padding: 0,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  transition: 'all 150ms ease',
+                  background: globeRotating ? 'rgba(56, 189, 248, 0.25)' : isLightTheme ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)',
+                  color: globeRotating ? '#0284c7' : isLightTheme ? '#64748b' : '#94a3b8',
+                  border: globeRotating ? '1px solid rgba(56, 189, 248, 0.6)' : isLightTheme ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
+                  boxShadow: globeRotating ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
+                }}
+                title={globeRotating ? 'Pause Globe Auto-Rotation' : 'Start Globe Auto-Rotation'}
+              >
+                <RotateCcw size={14} style={{ transform: globeRotating ? 'rotate(-45deg)' : 'none', transition: 'transform 200ms ease' }} />
+              </button>
+            )}
+          </>
         )}
 
         {/* Light / Dark Theme Toggle */}
@@ -1643,6 +2156,194 @@ export default function Network3DGraph({
                       }}>
                         {count}
                       </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 3D Layout Topology Dropdown */}
+        <div ref={layoutMenuRef} style={{ position: 'relative' }}>
+          <button
+            type="button"
+            onClick={() => setLayoutMenuOpen(!layoutMenuOpen)}
+            style={{
+              height: 30,
+              padding: '0 10px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: isLightTheme ? 'rgba(255, 255, 255, 0.92)' : 'rgba(15, 23, 42, 0.88)',
+              backdropFilter: 'blur(12px)',
+              border: `1px solid ${layoutMenuOpen ? (isLightTheme ? '#0284c7' : 'rgba(56, 189, 248, 0.5)') : isLightTheme ? 'rgba(203, 213, 225, 0.8)' : 'rgba(255, 255, 255, 0.12)'}`,
+              borderRadius: 8,
+              color: isLightTheme ? '#0f172a' : '#e2e8f0',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              boxShadow: isLightTheme ? '0 8px 32px rgba(15, 23, 42, 0.08)' : '0 8px 32px rgba(0, 0, 0, 0.4)',
+              transition: 'all 150ms ease',
+            }}
+            title="Change 3D Layout Topology"
+          >
+            <LayoutGrid size={13} style={{ color: isLightTheme ? '#0284c7' : '#38bdf8' }} />
+            <span>Layout</span>
+            <span style={{
+              fontSize: '0.66rem',
+              padding: '1px 6px',
+              borderRadius: 10,
+              background: isLightTheme ? 'rgba(2, 132, 199, 0.12)' : 'rgba(56, 189, 248, 0.22)',
+              color: isLightTheme ? '#0284c7' : '#38bdf8',
+              fontWeight: 700,
+              textTransform: 'uppercase',
+              letterSpacing: '0.02em',
+            }}>
+              {LAYOUT_3D_OPTIONS.find(l => l.id === activeLayout)?.badge || 'Present'}
+            </span>
+            <ChevronDown
+              size={12}
+              style={{
+                color: isLightTheme ? '#64748b' : '#94a3b8',
+                transform: layoutMenuOpen ? 'rotate(180deg)' : 'none',
+                transition: 'transform 150ms ease',
+              }}
+            />
+          </button>
+
+          {layoutMenuOpen && (
+            <div style={{
+              position: 'absolute',
+              top: 36,
+              left: 0,
+              width: 290,
+              background: isLightTheme ? 'rgba(255, 255, 255, 0.98)' : 'rgba(15, 23, 42, 0.96)',
+              backdropFilter: 'blur(16px)',
+              border: isLightTheme ? '1px solid rgba(203, 213, 225, 0.9)' : '1px solid rgba(255, 255, 255, 0.15)',
+              borderRadius: 10,
+              boxShadow: isLightTheme ? '0 16px 40px rgba(15, 23, 42, 0.2)' : '0 16px 40px rgba(0, 0, 0, 0.75)',
+              padding: '8px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 4,
+              zIndex: 100,
+            }}>
+              {/* Header */}
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '2px 6px 6px 6px',
+                borderBottom: isLightTheme ? '1px solid rgba(0, 0, 0, 0.08)' : '1px solid rgba(255, 255, 255, 0.08)',
+                fontSize: '0.68rem',
+                color: isLightTheme ? '#64748b' : '#94a3b8',
+                fontWeight: 600,
+                letterSpacing: '0.04em',
+              }}>
+                <span>3D GRAPH TOPOLOGY</span>
+                <span style={{
+                  fontSize: '0.64rem',
+                  color: isLightTheme ? '#0284c7' : '#38bdf8',
+                  fontWeight: 600,
+                }}>
+                  {LAYOUT_3D_OPTIONS.length} Presets
+                </span>
+              </div>
+
+              {/* Layout Options List */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 4 }}>
+                {LAYOUT_3D_OPTIONS.map((opt) => {
+                  const isActive = activeLayout === opt.id;
+                  const IconComp = opt.icon;
+
+                  return (
+                    <div
+                      key={opt.id}
+                      onClick={() => apply3DLayout(opt.id)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: 10,
+                        padding: '8px 10px',
+                        borderRadius: 7,
+                        background: isActive
+                          ? isLightTheme ? 'rgba(2, 132, 199, 0.1)' : 'rgba(56, 189, 248, 0.14)'
+                          : 'transparent',
+                        border: isActive
+                          ? isLightTheme ? '1px solid rgba(2, 132, 199, 0.35)' : '1px solid rgba(56, 189, 248, 0.4)'
+                          : '1px solid transparent',
+                        cursor: 'pointer',
+                        transition: 'all 120ms ease',
+                        userSelect: 'none',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isActive) {
+                          e.currentTarget.style.background = isLightTheme ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isActive) {
+                          e.currentTarget.style.background = 'transparent';
+                        }
+                      }}
+                    >
+                      <div style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: 6,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: isActive
+                          ? isLightTheme ? '#0284c7' : '#38bdf8'
+                          : isLightTheme ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.08)',
+                        color: isActive
+                          ? '#ffffff'
+                          : isLightTheme ? '#0f172a' : '#cbd5e1',
+                        flexShrink: 0,
+                        marginTop: 1,
+                      }}>
+                        <IconComp size={15} />
+                      </div>
+
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                          <span style={{
+                            fontSize: '0.78rem',
+                            fontWeight: isActive ? 700 : 600,
+                            color: isActive
+                              ? isLightTheme ? '#0284c7' : '#38bdf8'
+                              : isLightTheme ? '#0f172a' : '#f1f5f9',
+                          }}>
+                            {opt.label}
+                          </span>
+                          <span style={{
+                            fontSize: '0.62rem',
+                            fontWeight: 700,
+                            padding: '1px 5px',
+                            borderRadius: 4,
+                            background: isActive
+                              ? isLightTheme ? 'rgba(2, 132, 199, 0.15)' : 'rgba(56, 189, 248, 0.25)'
+                              : isLightTheme ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.08)',
+                            color: isActive
+                              ? isLightTheme ? '#0284c7' : '#38bdf8'
+                              : isLightTheme ? '#64748b' : '#94a3b8',
+                            letterSpacing: '0.02em',
+                            whiteSpace: 'nowrap',
+                          }}>
+                            {opt.badge}
+                          </span>
+                        </div>
+                        <p style={{
+                          margin: '2px 0 0 0',
+                          fontSize: '0.68rem',
+                          lineHeight: '1.25',
+                          color: isLightTheme ? '#64748b' : 'rgba(148, 163, 184, 0.85)',
+                        }}>
+                          {opt.description}
+                        </p>
+                      </div>
                     </div>
                   );
                 })}

@@ -314,6 +314,7 @@ export default function NetworkGraphPage() {
   const entityTypeParam = searchParams.get('entityType') || 'Person';
   const cyRef = useRef<HTMLDivElement>(null);
   const cyInstance = useRef<Core | null>(null);
+  const cyActiveLayout = useRef<any>(null);
   const [viewDimension, setViewDimension] = useState<'2d' | '3d'>('2d');
   const [layoutName, setLayoutName] = useState<'cose' | 'concentric' | 'circle' | 'breadthfirst' | 'grid'>('cose');
   const [allNodes, setAllNodes] = useState<GraphNode[]>([]);
@@ -545,8 +546,19 @@ export default function NetworkGraphPage() {
   const initCytoscape = useCallback(() => {
     if (!cyRef.current) return;
 
+    if (cyActiveLayout.current) {
+      try {
+        cyActiveLayout.current.stop();
+      } catch (e) {}
+      cyActiveLayout.current = null;
+    }
+
     if (cyInstance.current) {
+      try {
+        cyInstance.current.stop();
+      } catch (e) {}
       cyInstance.current.destroy();
+      cyInstance.current = null;
     }
 
     const cy = cytoscape({
@@ -737,7 +749,13 @@ export default function NetworkGraphPage() {
       } else if (name === 'random') {
         options = { ...options, animate: true, animationDuration: 600 };
       }
-      cyInstance.current.layout(options).run();
+      if (cyActiveLayout.current) {
+        try {
+          cyActiveLayout.current.stop();
+        } catch (e) {}
+      }
+      cyActiveLayout.current = cyInstance.current.layout(options);
+      cyActiveLayout.current.run();
     } catch (err) {
       console.warn('Layout switch error:', err);
     }
@@ -748,6 +766,14 @@ export default function NetworkGraphPage() {
     const cy = initCytoscape();
     if (!cy) return;
     loadDemoNetwork(cy);
+    return () => {
+      if (cyActiveLayout.current) {
+        try {
+          cyActiveLayout.current.stop();
+        } catch (e) {}
+        cyActiveLayout.current = null;
+      }
+    };
   }, [investigationCase, entityIdParam, entityTypeParam]);
 
   const renderGraph = (cy: Core, nodes: GraphNode[], edges: GraphEdge[]) => {
@@ -796,7 +822,12 @@ export default function NetworkGraphPage() {
     }
 
     try {
-      cy.layout({
+      if (cyActiveLayout.current) {
+        try {
+          cyActiveLayout.current.stop();
+        } catch (e) {}
+      }
+      cyActiveLayout.current = cy.layout({
         name: layoutName,
         randomize: true,
         animate: true,
@@ -805,7 +836,8 @@ export default function NetworkGraphPage() {
         nodeRepulsion: () => 8000,
         idealEdgeLength: () => 100,
         edgeElasticity: () => 100,
-      } as any).run();
+      } as any);
+      cyActiveLayout.current.run();
     } catch (err) {
       console.warn('Cytoscape layout warning:', err);
     }
