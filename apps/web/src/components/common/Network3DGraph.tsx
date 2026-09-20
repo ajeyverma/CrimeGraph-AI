@@ -74,11 +74,11 @@ export default function Network3DGraph({
   onToggleFullscreen,
 }: Network3DGraphProps) {
   const mountRef = useRef<HTMLDivElement>(null);
-  const [autoRotate, setAutoRotate] = useState(true);
+  const [autoRotate, setAutoRotate] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
   const [activeFilter, setActiveFilter] = useState<string>('ALL');
   const [hoveredNode, setHoveredNode] = useState<Graph3DNode | null>(null);
-  const [simRunning, setSimRunning] = useState(true);
+  const [simRunning, setSimRunning] = useState(false);
 
   // References to keep Three.js state across re-renders
   const sceneRef = useRef<THREE.Scene | null>(null);

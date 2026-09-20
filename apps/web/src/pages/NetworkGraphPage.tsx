@@ -1233,8 +1233,8 @@ export default function NetworkGraphPage() {
             } : {})
           }}
         >
-          {/* Top-Right Floating Canvas Controls */}
-          {(viewDimension === '2d' || isFullscreen) && (
+          {/* Top-Right Floating Canvas Controls (2D Only) */}
+          {viewDimension === '2d' && (
             <div
               style={{
                 position: 'absolute',
@@ -1246,12 +1246,12 @@ export default function NetworkGraphPage() {
                 gap: 8,
               }}
             >
-              {/* When in Fullscreen: button to switch 2D / 3D */}
+              {/* When in Fullscreen in 2D: button to switch to 3D */}
               {isFullscreen && (
                 <button
                   type="button"
-                  onClick={() => setViewDimension(viewDimension === '2d' ? '3d' : '2d')}
-                  title={viewDimension === '2d' ? 'Switch to 3D Space' : 'Switch to 2D Graph'}
+                  onClick={() => setViewDimension('3d')}
+                  title="Switch to 3D Space"
                   style={{
                     height: 34,
                     padding: '0 12px',
@@ -1270,17 +1270,8 @@ export default function NetworkGraphPage() {
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {viewDimension === '2d' ? (
-                    <>
-                      <Box size={14} color="#2563eb" />
-                      <span>Switch to 3D</span>
-                    </>
-                  ) : (
-                    <>
-                      <Network size={14} color="#2563eb" />
-                      <span>Switch to 2D</span>
-                    </>
-                  )}
+                  <Box size={14} color="#2563eb" />
+                  <span>Switch to 3D</span>
                 </button>
               )}
 
