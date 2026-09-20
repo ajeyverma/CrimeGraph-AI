@@ -569,6 +569,24 @@ export default function Network3DGraph({
 
   // Smooth camera fly-to for target node
   const flyToNode = useCallback((targetNode: Graph3DNode) => {
+    selectedNodeIdRef.current = targetNode.id;
+    const tConnEdges = visibleEdgesRef.current.filter(e => {
+      const s = typeof e.source === 'object' ? (e.source as any)?.id : String(e.source);
+      const t = typeof e.target === 'object' ? (e.target as any)?.id : String(e.target);
+      return s === targetNode.id || t === targetNode.id;
+    });
+    connectedEdgesRef.current = tConnEdges;
+    if (tConnEdges.length === 0 && particleSystem.current) {
+      particleSystem.current.visible = false;
+      const posAttr = particleSystem.current.geometry.attributes.position as THREE.BufferAttribute;
+      if (posAttr) {
+        for (let i = 0; i < MAX_PARTICLES; i++) {
+          posAttr.setXYZ(i, 99999, 99999, 99999);
+        }
+        posAttr.needsUpdate = true;
+      }
+    }
+
     onSelectNode(targetNode);
 
     const mesh = nodeMeshes.current.get(targetNode.id);
@@ -797,6 +815,22 @@ export default function Network3DGraph({
     if (!selectedNodeId) return [];
     return visibleEdges.filter(e => e.source === selectedNodeId || e.target === selectedNodeId);
   }, [selectedNodeId, visibleEdges]);
+
+  // Keep refs strictly synchronous on every render pass
+  selectedNodeIdRef.current = selectedNodeId;
+  connectedEdgesRef.current = connectedEdges;
+  isolateSelectionRef.current = isolateSelection;
+
+  if (selectedNodeId && connectedEdges.length === 0 && particleSystem.current) {
+    particleSystem.current.visible = false;
+    const posAttr = particleSystem.current.geometry.attributes.position as THREE.BufferAttribute;
+    if (posAttr) {
+      for (let i = 0; i < MAX_PARTICLES; i++) {
+        posAttr.setXYZ(i, 99999, 99999, 99999);
+      }
+      posAttr.needsUpdate = true;
+    }
+  }
 
   useEffect(() => {
     selectedNodeIdRef.current = selectedNodeId;
@@ -1145,6 +1179,8 @@ export default function Network3DGraph({
           flyToNode(targetNode);
         }
       } else {
+        selectedNodeIdRef.current = null;
+        connectedEdgesRef.current = [];
         onSelectNode(null);
       }
     };
@@ -1172,9 +1208,9 @@ export default function Network3DGraph({
 
     const isLightInitial = isLightThemeRef.current;
     for (let i = 0; i < MAX_PARTICLES; i++) {
-      particlePositions[i * 3] = 0;
-      particlePositions[i * 3 + 1] = 0;
-      particlePositions[i * 3 + 2] = 0;
+      particlePositions[i * 3] = 99999;
+      particlePositions[i * 3 + 1] = 99999;
+      particlePositions[i * 3 + 2] = 99999;
       particleColors[i * 3] = isLightInitial ? 0.01 : 0.25;
       particleColors[i * 3 + 1] = isLightInitial ? 0.35 : 0.82;
       particleColors[i * 3 + 2] = isLightInitial ? 0.85 : 1.0;
@@ -1349,16 +1385,31 @@ export default function Network3DGraph({
       // Update Traveling Data Particles (prioritize connected paths when a node is selected)
       const allEdges = visibleEdgesRef.current;
       const activeSelectedId = selectedNodeIdRef.current;
-      const isIsolateActive = isolateSelectionRef.current;
-      const connEdges = activeSelectedId
-        ? allEdges.filter(e => e.source === activeSelectedId || e.target === activeSelectedId)
-        : allEdges;
-      const curEdges = (activeSelectedId && connEdges.length > 0)
-        ? connEdges
-        : (isIsolateActive && activeSelectedId ? [] : allEdges);
+      const isIsolatedMode = isolateSelectionRef.current;
+
+      // If an entity is selected:
+      // - If it has connections, animate ONLY along those connections.
+      // - If it has NO connections, curEdges MUST BE [] (zero moving dots anywhere in scene).
+      // If NO entity is selected:
+      // - If isolate mode is active, no edges are visible -> curEdges = [].
+      // - Otherwise, animate along all visible edges.
+      let curEdges: Graph3DEdge[] = [];
+      if (activeSelectedId) {
+        curEdges = connectedEdgesRef.current;
+      } else if (!isIsolatedMode) {
+        curEdges = allEdges;
+      }
+
       if (particleSystem.current) {
         if (!curEdges || curEdges.length === 0) {
           particleSystem.current.visible = false;
+          const posAttr = particleSystem.current.geometry.attributes.position as THREE.BufferAttribute;
+          if (posAttr) {
+            for (let i = 0; i < MAX_PARTICLES; i++) {
+              posAttr.setXYZ(i, 99999, 99999, 99999);
+            }
+            posAttr.needsUpdate = true;
+          }
         } else {
           particleSystem.current.visible = true;
           const sim = simNodes.current;
@@ -1424,11 +1475,18 @@ export default function Network3DGraph({
         container.style.cursor = 'grab';
       }
 
-      // Pulse high-risk halos
+      // Billboard and pulse selection/high-risk halos (facing camera directly so they never slice or clip into spheres)
       const time = performance.now() * 0.003;
-      haloMeshes.current.forEach(halo => {
-        const scale = 1 + Math.sin(time) * 0.15;
-        halo.scale.set(scale, scale, scale);
+      haloMeshes.current.forEach((halo, nodeId) => {
+        halo.quaternion.copy(camera.quaternion);
+        const isSel = nodeId === selectedNodeIdRef.current;
+        if (isSel) {
+          const scale = 1.45 + Math.sin(time) * 0.06;
+          halo.scale.set(scale, scale, scale);
+        } else {
+          const scale = 1.15 + Math.sin(time) * 0.08;
+          halo.scale.set(scale, scale, scale);
+        }
       });
 
       if (showGlobeRef.current && globeRotatingRef.current) {
@@ -1516,10 +1574,14 @@ export default function Network3DGraph({
       highlightedEdgeSegments.current = null;
     }
 
-    // Hide particles immediately if no edges are visible
+    // Hide particles immediately if no edges are visible or if selected entity has no connections
     if (particleSystem.current) {
-      particleSystem.current.visible = visibleEdges.length > 0;
-      if (visibleEdges.length === 0 && particleGeoRef.current) {
+      const hasActiveEdges = selectedNodeId
+        ? connectedEdges.length > 0
+        : visibleEdges.length > 0;
+
+      particleSystem.current.visible = hasActiveEdges;
+      if (!hasActiveEdges && particleGeoRef.current) {
         const posAttr = particleGeoRef.current.attributes.position as THREE.BufferAttribute;
         if (posAttr) {
           for (let i = 0; i < MAX_PARTICLES; i++) {
@@ -1601,9 +1663,10 @@ export default function Network3DGraph({
             side: THREE.DoubleSide,
             transparent: true,
             opacity: 0.9,
+            depthWrite: false,
           });
           const halo = new THREE.Mesh(haloGeo, haloMat);
-          halo.scale.set(1.4, 1.4, 1.4);
+          halo.scale.set(1.45, 1.45, 1.45);
           halo.position.copy(mesh.position);
           scene.add(halo);
           haloMeshes.current.set(node.id, halo);
@@ -1613,6 +1676,7 @@ export default function Network3DGraph({
             side: THREE.DoubleSide,
             transparent: true,
             opacity: 0.75,
+            depthWrite: false,
           });
           const halo = new THREE.Mesh(haloGeo, haloMat);
           halo.scale.set(1.15, 1.15, 1.15);
@@ -1625,6 +1689,7 @@ export default function Network3DGraph({
             side: THREE.DoubleSide,
             transparent: true,
             opacity: 0.65,
+            depthWrite: false,
           });
           const halo = new THREE.Mesh(haloGeo, haloMat);
           halo.position.copy(mesh.position);
