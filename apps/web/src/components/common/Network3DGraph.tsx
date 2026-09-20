@@ -1243,9 +1243,58 @@ export default function Network3DGraph({
       }
     };
 
+    // Double-click on blank / empty space -> smoothly move graph and camera back to center
+    const onDoubleClick = (event: MouseEvent) => {
+      const rect = container.getBoundingClientRect();
+      const clickX = event.clientX - rect.left;
+      const clickY = event.clientY - rect.top;
+
+      // Ignore if double-click happened inside bottom-right gizmo
+      const gizmoCenterX = rect.width - 18 - 64;
+      const gizmoCenterY = rect.height - 18 - 64;
+      const distFromGizmo = Math.hypot(clickX - gizmoCenterX, clickY - gizmoCenterY);
+      if (distFromGizmo <= 64) return;
+
+      const clickMouse = new THREE.Vector2(
+        (clickX / rect.width) * 2 - 1,
+        -(clickY / rect.height) * 2 + 1
+      );
+
+      raycaster.setFromCamera(clickMouse, camera);
+      const meshes = Array.from(nodeMeshes.current.values());
+      const intersects = raycaster.intersectObjects(meshes);
+
+      // If user double-clicked directly on a node, let node interaction handle it
+      if (intersects.length > 0) return;
+
+      // Blank space double-clicked: deselect and smoothly animate camera and graph back to center
+      selectedNodeIdRef.current = null;
+      connectedEdgesRef.current = [];
+      onSelectNode(null);
+
+      let t = 0;
+      const startCamPos = camera.position.clone();
+      const startTarget = controls.target.clone();
+      const targetCamPos = new THREE.Vector3(0, 95, 520);
+      const targetTarget = new THREE.Vector3(0, 0, 0);
+
+      const centerAnim = () => {
+        t += 0.04;
+        const ease = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(t, 1));
+        camera.position.lerpVectors(startCamPos, targetCamPos, ease);
+        controls.target.lerpVectors(startTarget, targetTarget, ease);
+        controls.update();
+        if (t < 1) {
+          requestAnimationFrame(centerAnim);
+        }
+      };
+      centerAnim();
+    };
+
     container.addEventListener('pointerdown', onPointerDown);
     container.addEventListener('mousemove', onMouseMove);
     container.addEventListener('click', onClick);
+    container.addEventListener('dblclick', onDoubleClick);
     container.addEventListener('wheel', onWheel, { passive: false });
 
     // 8. Resize Observer
@@ -1573,6 +1622,7 @@ export default function Network3DGraph({
       container.removeEventListener('pointerdown', onPointerDown);
       container.removeEventListener('mousemove', onMouseMove);
       container.removeEventListener('click', onClick);
+      container.removeEventListener('dblclick', onDoubleClick);
       container.removeEventListener('wheel', onWheel);
       hRingGeo.dispose();
       hRingMat.dispose();
@@ -1893,13 +1943,33 @@ export default function Network3DGraph({
     }
   }, [autoRotate]);
 
-  // Camera reset (Balanced default view framing)
+  // Camera reset (Smooth animation back to center default view framing)
   const handleResetCamera = () => {
-    if (cameraRef.current && controlsRef.current) {
-      cameraRef.current.position.set(0, 95, 520);
-      controlsRef.current.target.set(0, 0, 0);
-      controlsRef.current.update();
-    }
+    selectedNodeIdRef.current = null;
+    connectedEdgesRef.current = [];
+    onSelectNode(null);
+
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) return;
+
+    let t = 0;
+    const startCamPos = camera.position.clone();
+    const startTarget = controls.target.clone();
+    const targetCamPos = new THREE.Vector3(0, 95, 520);
+    const targetTarget = new THREE.Vector3(0, 0, 0);
+
+    const centerAnim = () => {
+      t += 0.04;
+      const ease = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(t, 1));
+      camera.position.lerpVectors(startCamPos, targetCamPos, ease);
+      controls.target.lerpVectors(startTarget, targetTarget, ease);
+      controls.update();
+      if (t < 1) {
+        requestAnimationFrame(centerAnim);
+      }
+    };
+    centerAnim();
   };
 
   const handleZoom = (factor: number) => {
@@ -2929,8 +2999,9 @@ export default function Network3DGraph({
               </div>
               <div>• <strong>Left Click + Drag:</strong> 360° Space Orbit</div>
               <div>• <strong>Right Click + Drag:</strong> Pan / Translate View</div>
-              <div>• <strong>Scroll Wheel:</strong> Zoom In / Out</div>
+              <div>• <strong>Scroll Wheel:</strong> Zoom Towards Mouse Pointer</div>
               <div>• <strong>Click Any Node:</strong> Focus Camera & Dossier</div>
+              <div>• <strong>Double Click Blank Space:</strong> Move Graph to Center</div>
               <div>• <strong>Bottom-Right Gizmo:</strong> Snap X, Y, Z, or Isometric</div>
             </div>
           )}
