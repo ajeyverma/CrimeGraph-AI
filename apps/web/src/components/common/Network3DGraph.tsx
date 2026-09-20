@@ -7,7 +7,7 @@ import {
   Layers, Eye, EyeOff, RefreshCw, Sparkles, Filter, Check, ChevronDown,
   Search, X, Globe, RotateCcw, Sun, Moon,
   User, Phone as PhoneIcon, Car, Building2, MapPin, CreditCard, Briefcase, Package, Calendar, Circle,
-  Network, Box, Info, LayoutGrid, Disc, Shuffle
+  Network, Box, Info, LayoutGrid, Disc, Shuffle, Target
 } from 'lucide-react';
 
 export interface Graph3DNode {
@@ -314,6 +314,12 @@ export default function Network3DGraph({
   const [layoutMenuOpen, setLayoutMenuOpen] = useState(false);
   const layoutMenuRef = useRef<HTMLDivElement>(null);
   const layoutAnimRef = useRef<number | null>(null);
+  const [isolateSelection, setIsolateSelection] = useState(false);
+  const isolateSelectionRef = useRef(false);
+
+  useEffect(() => {
+    isolateSelectionRef.current = isolateSelection;
+  }, [isolateSelection]);
 
   // Close layout menu on outside click
   useEffect(() => {
@@ -1279,10 +1285,13 @@ export default function Network3DGraph({
       // Update Traveling Data Particles (prioritize connected paths when a node is selected)
       const allEdges = visibleEdgesRef.current;
       const activeSelectedId = selectedNodeIdRef.current;
+      const isIsolateActive = isolateSelectionRef.current;
       const connEdges = activeSelectedId
         ? allEdges.filter(e => e.source === activeSelectedId || e.target === activeSelectedId)
         : allEdges;
-      const curEdges = (activeSelectedId && connEdges.length > 0) ? connEdges : allEdges;
+      const curEdges = (activeSelectedId && connEdges.length > 0)
+        ? connEdges
+        : (isIsolateActive && activeSelectedId ? [] : allEdges);
       if (particleSystem.current) {
         if (!curEdges || curEdges.length === 0) {
           particleSystem.current.visible = false;
@@ -1469,6 +1478,11 @@ export default function Network3DGraph({
       const isDimmed = Boolean(selectedNodeId && !isSelected && !isConnectedNeighbor);
       const isHighRisk = Number(node.risk_score || 0) >= 0.7 || node.flagged;
 
+      // When isolate mode is enabled and an entity is selected, completely hide all other unconnected entities
+      if (isolateSelection && isDimmed) {
+        return;
+      }
+
       let nodeOpacity = 1.0;
       let emissiveIntensity = 0.25;
       let emissiveColor = new THREE.Color(colorHex);
@@ -1595,8 +1609,8 @@ export default function Network3DGraph({
       }
     });
 
-    // Create 3D Edge Line Segments (Base Layer - Dimmed when node is selected)
-    if (visibleEdges.length > 0) {
+    // Create 3D Edge Line Segments (Base Layer - Dimmed when node is selected, or hidden if isolate mode is active)
+    if (visibleEdges.length > 0 && (!isolateSelection || !selectedNodeId)) {
       const linePositions = new Float32Array(visibleEdges.length * 6);
       const lineColors = new Float32Array(visibleEdges.length * 6);
       const isDimmedState = Boolean(selectedNodeId);
@@ -1683,7 +1697,7 @@ export default function Network3DGraph({
       scene.add(hLines);
       highlightedEdgeSegments.current = hLines;
     }
-  }, [visibleNodes, visibleEdges, selectedNodeId, connectedNeighbors, connectedEdges, showLabels, getNodeLabel, isLightTheme, sceneReady, activeLayout]);
+  }, [visibleNodes, visibleEdges, selectedNodeId, connectedNeighbors, connectedEdges, showLabels, getNodeLabel, isLightTheme, sceneReady, activeLayout, isolateSelection]);
 
   // Update controls auto-rotate state
   useEffect(() => {
@@ -1773,6 +1787,29 @@ export default function Network3DGraph({
           title={showLabels ? 'Hide Floating Labels' : 'Show Floating Labels'}
         >
           {showLabels ? <Eye size={14} /> : <EyeOff size={14} />}
+        </button>
+
+        {/* Isolate Mode Quick Toggle */}
+        <button
+          onClick={() => setIsolateSelection(prev => !prev)}
+          style={{
+            width: 30,
+            height: 30,
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 6,
+            cursor: 'pointer',
+            transition: 'all 150ms ease',
+            background: isolateSelection ? 'rgba(56, 189, 248, 0.25)' : isLightTheme ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)',
+            color: isolateSelection ? '#0284c7' : isLightTheme ? '#64748b' : '#94a3b8',
+            border: isolateSelection ? '1px solid rgba(56, 189, 248, 0.6)' : isLightTheme ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
+            boxShadow: isolateSelection ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
+          }}
+          title={isolateSelection ? 'Isolate Mode Active: Unconnected entities are hidden on selection. Click to dim instead.' : 'Isolate Mode Inactive: Unconnected entities are dimmed on selection. Click to hide them.'}
+        >
+          <Target size={14} />
         </button>
 
         {/* Physics toggle (only available in spherical orbit layout) */}
@@ -2849,7 +2886,15 @@ export default function Network3DGraph({
           color: isLightTheme ? '#334155' : '#e2e8f0',
           boxShadow: isLightTheme ? '0 4px 12px rgba(0, 0, 0, 0.05)' : '0 4px 16px rgba(0, 0, 0, 0.4)',
         }}>
-          <strong style={{ color: isLightTheme ? 'var(--accent-primary, #2563eb)' : '#38bdf8' }}>{visibleNodes.length}</strong> nodes · <strong style={{ color: isLightTheme ? 'var(--accent-primary, #2563eb)' : '#38bdf8' }}>{visibleEdges.length}</strong> edges
+          {selectedNodeId && isolateSelection ? (
+            <>
+              <strong style={{ color: isLightTheme ? 'var(--accent-primary, #2563eb)' : '#38bdf8' }}>{1 + connectedNeighbors.size}</strong> visible ({connectedNeighbors.size} connected) · <strong style={{ color: isLightTheme ? 'var(--accent-primary, #2563eb)' : '#38bdf8' }}>{connectedEdges.length}</strong> edges
+            </>
+          ) : (
+            <>
+              <strong style={{ color: isLightTheme ? 'var(--accent-primary, #2563eb)' : '#38bdf8' }}>{visibleNodes.length}</strong> nodes · <strong style={{ color: isLightTheme ? 'var(--accent-primary, #2563eb)' : '#38bdf8' }}>{visibleEdges.length}</strong> edges
+            </>
+          )}
         </div>
         {investigationCase && (
           <div style={{
