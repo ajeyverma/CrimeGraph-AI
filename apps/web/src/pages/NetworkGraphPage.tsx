@@ -347,6 +347,7 @@ export default function NetworkGraphPage() {
   const filter2DRef = useRef<HTMLDivElement>(null);
   const search2DRef = useRef<HTMLDivElement>(null);
   const layout2DRef = useRef<HTMLDivElement>(null);
+  const [showDisclaimer2D, setShowDisclaimer2D] = useState(false);
 
   const toggleFullscreen = useCallback(() => {
     setIsFullscreen(prev => {
@@ -557,102 +558,110 @@ export default function NetworkGraphPage() {
             'background-color': (ele: NodeSingular) => NODE_COLORS[ele.data('nodeType')] || '#64748b',
             'shape': (ele: NodeSingular) => (NODE_SHAPES[ele.data('nodeType')] || 'ellipse') as any,
             'label': 'data(label)',
-            'color': '#f8fafc',
+            'color': '#0f172a',
             'font-size': '11px',
-            'font-family': 'Inter, sans-serif',
+            'font-family': 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
             'font-weight': '600',
             'text-valign': 'bottom',
             'text-halign': 'center',
-            'text-margin-y': '5px',
-            'width': 38,
-            'height': 38,
+            'text-margin-y': '6px',
+            'width': 40,
+            'height': 40,
             'border-width': 2.5,
-            'border-color': 'rgba(255,255,255,0.85)',
-            'border-opacity': 0.95,
-            'text-outline-width': 3,
-            'text-outline-color': '#0b0f19',
+            'border-color': '#ffffff',
+            'border-opacity': 1,
+            'text-outline-width': 2.5,
+            'text-outline-color': '#ffffff',
+            'text-outline-opacity': 0.95,
             'text-max-width': '95px',
             'text-wrap': 'ellipsis',
             'overlay-padding': '4px',
+            'shadow-blur': 10,
+            'shadow-color': 'rgba(15, 23, 42, 0.12)',
+            'shadow-opacity': 0.8,
           },
         },
         {
           selector: 'node:selected',
           style: {
             'border-width': 4,
-            'border-color': '#3b82f6',
-            'width': 46,
-            'height': 46,
+            'border-color': '#2563eb',
+            'width': 48,
+            'height': 48,
             'shadow-blur': 18,
-            'shadow-color': '#3b82f6',
-            'shadow-opacity': 0.8,
+            'shadow-color': 'rgba(37, 99, 235, 0.45)',
+            'shadow-opacity': 0.9,
           },
         },
         {
           selector: 'node.highlighted',
           style: {
             'border-width': 4,
-            'border-color': '#f59e0b',
+            'border-color': '#d97706',
             'shadow-blur': 16,
-            'shadow-color': '#f59e0b',
-            'shadow-opacity': 0.85,
+            'shadow-color': 'rgba(217, 119, 6, 0.45)',
+            'shadow-opacity': 0.9,
           },
         },
         {
           selector: 'node.flagged-target',
           style: {
             'border-width': 3.5,
-            'border-color': '#ef4444',
+            'border-color': '#dc2626',
             'shadow-blur': 14,
-            'shadow-color': '#ef4444',
-            'shadow-opacity': 0.8,
+            'shadow-color': 'rgba(220, 38, 38, 0.45)',
+            'shadow-opacity': 0.85,
           },
         },
         {
           selector: 'node.dimmed',
-          style: { 'opacity': 0.18 },
+          style: { 'opacity': 0.2 },
         },
         {
           selector: 'edge',
           style: {
             'width': 1.8,
-            'line-color': '#475569',
-            'target-arrow-color': '#64748b',
+            'line-color': '#94a3b8',
+            'target-arrow-color': '#94a3b8',
             'target-arrow-shape': 'triangle',
             'curve-style': 'bezier',
             'label': 'data(label)',
-            'color': '#94a3b8',
-            'font-size': '9px',
-            'font-weight': '500',
-            'text-background-color': '#090d16',
-            'text-background-opacity': 0.85,
-            'text-background-padding': '3px',
+            'color': '#334155',
+            'font-size': '9.5px',
+            'font-weight': '600',
+            'font-family': 'Inter, -apple-system, BlinkMacSystemFont, sans-serif',
+            'text-background-color': '#ffffff',
+            'text-background-opacity': 0.96,
+            'text-background-padding': '3px 5px',
             'text-background-shape': 'roundrectangle',
+            'text-border-color': '#cbd5e1',
+            'text-border-width': 1,
+            'text-border-opacity': 0.85,
             'edge-text-rotation': 'autorotate',
-            'opacity': 0.75,
+            'opacity': 0.85,
           },
         },
         {
           selector: 'edge:selected',
           style: {
-            'line-color': '#3b82f6',
-            'target-arrow-color': '#3b82f6',
-            'width': 3,
+            'line-color': '#2563eb',
+            'target-arrow-color': '#2563eb',
+            'width': 2.8,
             'opacity': 1,
           },
         },
         {
           selector: 'edge.path-highlight',
           style: {
-            'line-color': '#f59e0b',
-            'target-arrow-color': '#f59e0b',
+            'line-color': '#d97706',
+            'target-arrow-color': '#d97706',
             'width': 3.2,
             'opacity': 1,
           },
         },
         {
           selector: 'edge.dimmed',
-          style: { 'opacity': 0.08 },
+          style: { 'opacity': 0.1 },
         },
       ],
       layout: { name: 'cose', randomize: true, animate: false } as any,
@@ -1130,7 +1139,7 @@ export default function NetworkGraphPage() {
 
   const exportGraph = () => {
     if (!cyInstance.current) return;
-    const png = cyInstance.current.png({ output: 'blob', scale: 2, bg: '#080c18' });
+    const png = cyInstance.current.png({ output: 'blob', scale: 2, bg: '#f8fafc' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(png);
     a.download = `crimegraph-network-${Date.now()}.png`;
@@ -1205,7 +1214,7 @@ export default function NetworkGraphPage() {
             width: '100vw',
             height: '100vh',
             zIndex: 9999,
-            background: '#080c18',
+            background: viewDimension === '3d' ? '#080c18' : '#f8fafc',
             padding: 0,
             margin: 0,
             border: 'none',
@@ -1228,6 +1237,8 @@ export default function NetworkGraphPage() {
             padding: 0,
             width: '100%',
             height: '100%',
+            background: viewDimension === '3d' ? '#070c18' : 'radial-gradient(#e2e8f0 1.2px, #f8fafc 1.2px)',
+            backgroundSize: viewDimension === '3d' ? 'auto' : '24px 24px',
           }}
         >
           {/* 2D Controls (Vertical Menu, Filters, Search & Top-Right Switch) */}
@@ -1953,7 +1964,9 @@ export default function NetworkGraphPage() {
             <div style={{
               position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
               alignItems: 'center', justifyContent: 'center', gap: 12,
-              background: 'rgba(8, 12, 24, 0.75)', zIndex: 30, borderRadius: 14,
+              background: viewDimension === '3d' ? 'rgba(8, 12, 24, 0.75)' : 'rgba(248, 250, 252, 0.85)',
+              backdropFilter: 'blur(8px)',
+              zIndex: 30, borderRadius: 0,
             }}>
               <div className="loading-spinner" style={{ width: 40, height: 40, borderWidth: 3 }} />
               <span style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>Loading intelligence network...</span>
@@ -1983,6 +1996,7 @@ export default function NetworkGraphPage() {
                 isFullscreen={isFullscreen}
                 onToggleFullscreen={toggleFullscreen}
                 onSwitchTo2D={() => setViewDimension('2d')}
+                investigationCase={investigationCase || undefined}
               />
             </div>
           )}
@@ -1994,25 +2008,83 @@ export default function NetworkGraphPage() {
               display: 'flex', gap: 8, flexWrap: 'wrap', zIndex: 10,
             }}>
               <div style={{
-                padding: '5px 12px', background: 'rgba(15, 23, 42, 0.88)',
-                backdropFilter: 'blur(8px)', border: '1px solid rgba(255, 255, 255, 0.1)',
-                borderRadius: 8, fontSize: '0.74rem', color: '#cbd5e1',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+                padding: '5px 12px', background: 'rgba(255, 255, 255, 0.94)',
+                backdropFilter: 'blur(10px)', border: '1px solid var(--border-primary, #cbd5e1)',
+                borderRadius: 8, fontSize: '0.74rem', color: '#334155',
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)',
               }}>
-                <strong style={{ color: '#38bdf8' }}>{nodeCount}</strong> nodes · <strong style={{ color: '#38bdf8' }}>{edgeCount}</strong> edges
+                <strong style={{ color: 'var(--accent-primary, #2563eb)' }}>{nodeCount}</strong> nodes · <strong style={{ color: 'var(--accent-primary, #2563eb)' }}>{edgeCount}</strong> edges
               </div>
               {investigationCase && (
                 <div style={{
-                  padding: '5px 12px', background: 'rgba(37, 99, 235, 0.25)',
-                  backdropFilter: 'blur(8px)', border: '1px solid rgba(59, 130, 246, 0.45)',
-                  borderRadius: 8, fontSize: '0.74rem', color: '#93c5fd',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                  padding: '5px 12px', background: 'rgba(37, 99, 235, 0.08)',
+                  backdropFilter: 'blur(10px)', border: '1px solid rgba(37, 99, 235, 0.25)',
+                  borderRadius: 8, fontSize: '0.74rem', color: 'var(--accent-primary, #2563eb)',
+                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.05)',
                 }}>
                   Case: <strong>{investigationCase}</strong>
                 </div>
               )}
-              <div className="ai-disclaimer" style={{ padding: '5px 12px', fontSize: '0.72rem' }}>
-                Analytical relationships — not proof of wrongdoing
+              {/* Red About Icon Button with Hover Disclaimer */}
+              <div style={{ position: 'relative', display: 'inline-flex' }}>
+                <button
+                  type="button"
+                  aria-label="Analytical disclaimer"
+                  title="Analytical relationships — not proof of wrongdoing"
+                  onMouseEnter={() => setShowDisclaimer2D(true)}
+                  onMouseLeave={() => setShowDisclaimer2D(false)}
+                  onClick={() => setShowDisclaimer2D(prev => !prev)}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    padding: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    background: 'rgba(239, 68, 68, 0.12)',
+                    border: '1px solid rgba(239, 68, 68, 0.45)',
+                    color: '#ef4444',
+                    backdropFilter: 'blur(10px)',
+                    boxShadow: '0 2px 8px rgba(239, 68, 68, 0.15)',
+                    transition: 'all 150ms ease',
+                  }}
+                  onFocus={() => setShowDisclaimer2D(true)}
+                  onBlur={() => setShowDisclaimer2D(false)}
+                >
+                  <Info size={15} strokeWidth={2.4} />
+                </button>
+
+                {/* Hover Disclaimer Popover */}
+                {showDisclaimer2D && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      bottom: 'calc(100% + 8px)',
+                      left: 0,
+                      whiteSpace: 'nowrap',
+                      background: 'rgba(255, 255, 255, 0.98)',
+                      backdropFilter: 'blur(16px)',
+                      border: '1px solid rgba(239, 68, 68, 0.45)',
+                      borderRadius: 8,
+                      padding: '6px 12px',
+                      fontSize: '0.74rem',
+                      fontWeight: 500,
+                      color: '#991b1b',
+                      boxShadow: '0 8px 24px rgba(239, 68, 68, 0.15)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      pointerEvents: 'none',
+                      zIndex: 100,
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    <Info size={13} color="#ef4444" strokeWidth={2.4} />
+                    <span>Analytical relationships — not proof of wrongdoing</span>
+                  </div>
+                )}
               </div>
             </div>
           )}

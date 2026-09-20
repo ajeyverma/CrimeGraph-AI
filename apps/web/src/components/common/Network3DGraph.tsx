@@ -45,6 +45,7 @@ interface Network3DGraphProps {
   onToggleFullscreen?: () => void;
   onSwitchTo2D?: () => void;
   showGlobeDiagonals?: boolean;
+  investigationCase?: string;
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -114,6 +115,7 @@ export default function Network3DGraph({
   onToggleFullscreen,
   onSwitchTo2D,
   showGlobeDiagonals = SHOW_GLOBE_DIAGONALS,
+  investigationCase,
 }: Network3DGraphProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const [autoRotate, setAutoRotate] = useState(false);
@@ -123,6 +125,7 @@ export default function Network3DGraph({
   const simRunningRef = useRef(false);
   const [sceneReady, setSceneReady] = useState(false);
   const [showNavGuide, setShowNavGuide] = useState(false);
+  const [showDisclaimer, setShowDisclaimer] = useState(false);
 
   useEffect(() => {
     simRunningRef.current = simRunning;
@@ -2066,8 +2069,8 @@ export default function Network3DGraph({
       {hoveredNode && (
         <div style={{
           position: 'absolute',
-          bottom: 20,
-          left: 20,
+          bottom: 50,
+          left: 12,
           zIndex: 10,
           background: isLightTheme ? 'rgba(255, 255, 255, 0.97)' : 'rgba(15, 23, 42, 0.95)',
           backdropFilter: 'blur(16px)',
@@ -2123,6 +2126,108 @@ export default function Network3DGraph({
           </div>
         </div>
       )}
+
+      {/* Bottom Stats Overlay (Nodes & Edges Count) */}
+      <div style={{
+        position: 'absolute',
+        bottom: 12,
+        left: 12,
+        display: 'flex',
+        gap: 8,
+        flexWrap: 'wrap',
+        zIndex: 10,
+        pointerEvents: 'none',
+      }}>
+        <div style={{
+          padding: '5px 12px',
+          background: isLightTheme ? 'rgba(255, 255, 255, 0.94)' : 'rgba(15, 23, 42, 0.88)',
+          backdropFilter: 'blur(10px)',
+          border: isLightTheme ? '1px solid var(--border-primary, #cbd5e1)' : '1px solid rgba(56, 189, 248, 0.3)',
+          borderRadius: 8,
+          fontSize: '0.74rem',
+          color: isLightTheme ? '#334155' : '#e2e8f0',
+          boxShadow: isLightTheme ? '0 4px 12px rgba(0, 0, 0, 0.05)' : '0 4px 16px rgba(0, 0, 0, 0.4)',
+        }}>
+          <strong style={{ color: isLightTheme ? 'var(--accent-primary, #2563eb)' : '#38bdf8' }}>{visibleNodes.length}</strong> nodes · <strong style={{ color: isLightTheme ? 'var(--accent-primary, #2563eb)' : '#38bdf8' }}>{visibleEdges.length}</strong> edges
+        </div>
+        {investigationCase && (
+          <div style={{
+            padding: '5px 12px',
+            background: isLightTheme ? 'rgba(37, 99, 235, 0.08)' : 'rgba(56, 189, 248, 0.12)',
+            backdropFilter: 'blur(10px)',
+            border: isLightTheme ? '1px solid rgba(37, 99, 235, 0.25)' : '1px solid rgba(56, 189, 248, 0.35)',
+            borderRadius: 8,
+            fontSize: '0.74rem',
+            color: isLightTheme ? 'var(--accent-primary, #2563eb)' : '#38bdf8',
+            boxShadow: isLightTheme ? '0 4px 12px rgba(0, 0, 0, 0.05)' : '0 4px 16px rgba(0, 0, 0, 0.4)',
+          }}>
+            Case: <strong>{investigationCase}</strong>
+          </div>
+        )}
+        {/* Red About Icon Button with Hover Disclaimer */}
+        <div style={{ position: 'relative', display: 'inline-flex', pointerEvents: 'auto' }}>
+          <button
+            type="button"
+            aria-label="Analytical disclaimer"
+            title="Analytical relationships — not proof of wrongdoing"
+            onMouseEnter={() => setShowDisclaimer(true)}
+            onMouseLeave={() => setShowDisclaimer(false)}
+            onClick={() => setShowDisclaimer(prev => !prev)}
+            style={{
+              width: 28,
+              height: 28,
+              padding: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 8,
+              cursor: 'pointer',
+              background: isLightTheme ? 'rgba(239, 68, 68, 0.12)' : 'rgba(239, 68, 68, 0.22)',
+              border: isLightTheme ? '1px solid rgba(239, 68, 68, 0.45)' : '1px solid rgba(239, 68, 68, 0.55)',
+              color: '#ef4444',
+              backdropFilter: 'blur(10px)',
+              boxShadow: isLightTheme ? '0 2px 8px rgba(239, 68, 68, 0.15)' : '0 2px 10px rgba(239, 68, 68, 0.3)',
+              transition: 'all 150ms ease',
+            }}
+            onFocus={() => setShowDisclaimer(true)}
+            onBlur={() => setShowDisclaimer(false)}
+          >
+            <Info size={15} strokeWidth={2.4} />
+          </button>
+
+          {/* Hover Disclaimer Popover */}
+          {showDisclaimer && (
+            <div
+              style={{
+                position: 'absolute',
+                bottom: 'calc(100% + 8px)',
+                left: 0,
+                whiteSpace: 'nowrap',
+                background: isLightTheme ? 'rgba(255, 255, 255, 0.98)' : 'rgba(15, 23, 42, 0.96)',
+                backdropFilter: 'blur(16px)',
+                border: '1px solid rgba(239, 68, 68, 0.45)',
+                borderRadius: 8,
+                padding: '6px 12px',
+                fontSize: '0.74rem',
+                fontWeight: 500,
+                color: isLightTheme ? '#991b1b' : '#fca5a5',
+                boxShadow: isLightTheme
+                  ? '0 8px 24px rgba(239, 68, 68, 0.15)'
+                  : '0 8px 24px rgba(0, 0, 0, 0.6), 0 0 12px rgba(239, 68, 68, 0.25)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                pointerEvents: 'none',
+                zIndex: 100,
+                lineHeight: 1.4,
+              }}
+            >
+              <Info size={13} color="#ef4444" strokeWidth={2.4} />
+              <span>Analytical relationships — not proof of wrongdoing</span>
+            </div>
+          )}
+        </div>
+      </div>
 
     </div>
   );
