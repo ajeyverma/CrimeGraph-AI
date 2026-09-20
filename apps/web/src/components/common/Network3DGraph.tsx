@@ -932,6 +932,7 @@ export default function Network3DGraph({
     controls.autoRotateSpeed = 0.8;
     controls.maxDistance = 1600;
     controls.minDistance = 30;
+    controls.enableZoom = false; // Disable default center zoom; custom zoom-to-mouse-pointer is handled via wheel event
     controlsRef.current = controls;
 
     // 4b. 3D Viewport Orientation Gizmo (like Unity Scene Gizmo)
@@ -1185,9 +1186,67 @@ export default function Network3DGraph({
       }
     };
 
+    // Zoom towards exact 3D area under the mouse pointer on wheel scroll
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+
+      const delta = event.deltaY;
+      if (Math.abs(delta) < 0.001) return;
+
+      const rect = container.getBoundingClientRect();
+      const mouseX = event.clientX - rect.left;
+      const mouseY = event.clientY - rect.top;
+
+      // Bottom-right Gizmo region check (dim=128, right=18, bottom=18)
+      const gizmoCenterX = rect.width - 18 - 64;
+      const gizmoCenterY = rect.height - 18 - 64;
+      const distFromGizmo = Math.hypot(mouseX - gizmoCenterX, mouseY - gizmoCenterY);
+      if (distFromGizmo <= 64) {
+        return; // Absorb wheel inside gizmo bounds
+      }
+
+      const mouseNDC = new THREE.Vector2(
+        (mouseX / rect.width) * 2 - 1,
+        -(mouseY / rect.height) * 2 + 1
+      );
+
+      // Smooth zoom factor based on delta (supports both discrete mouse wheels and precision touchpads)
+      const zoomFactor = Math.min(Math.max(Math.pow(0.998, -delta), 0.75), 1.35);
+
+      const currentDist = camera.position.distanceTo(controls.target);
+      const nextDist = currentDist * zoomFactor;
+
+      let effectiveZoomFactor = zoomFactor;
+      if (nextDist < controls.minDistance) {
+        effectiveZoomFactor = controls.minDistance / (currentDist || 1);
+      } else if (nextDist > controls.maxDistance) {
+        effectiveZoomFactor = controls.maxDistance / (currentDist || 1);
+      }
+
+      if (Math.abs(effectiveZoomFactor - 1) < 0.0001) return;
+
+      raycaster.setFromCamera(mouseNDC, camera);
+
+      // Plane passing through controls.target facing camera
+      const planeNormal = new THREE.Vector3();
+      camera.getWorldDirection(planeNormal).negate();
+      const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(planeNormal, controls.target);
+      const targetPoint = new THREE.Vector3();
+
+      if (raycaster.ray.intersectPlane(plane, targetPoint)) {
+        // Shift camera.position and controls.target so the exact point under the mouse pointer
+        // remains anchored in place while the area zooms in/out smoothly!
+        const lerpFactor = 1 - effectiveZoomFactor;
+        camera.position.lerp(targetPoint, lerpFactor);
+        controls.target.lerp(targetPoint, lerpFactor);
+        controls.update();
+      }
+    };
+
     container.addEventListener('pointerdown', onPointerDown);
     container.addEventListener('mousemove', onMouseMove);
     container.addEventListener('click', onClick);
+    container.addEventListener('wheel', onWheel, { passive: false });
 
     // 8. Resize Observer
     const resizeObserver = new ResizeObserver(() => {
@@ -1385,18 +1444,16 @@ export default function Network3DGraph({
       // Update Traveling Data Particles (prioritize connected paths when a node is selected)
       const allEdges = visibleEdgesRef.current;
       const activeSelectedId = selectedNodeIdRef.current;
-      const isIsolatedMode = isolateSelectionRef.current;
 
       // If an entity is selected:
-      // - If it has connections, animate ONLY along those connections.
-      // - If it has NO connections, curEdges MUST BE [] (zero moving dots anywhere in scene).
-      // If NO entity is selected:
-      // - If isolate mode is active, no edges are visible -> curEdges = [].
-      // - Otherwise, animate along all visible edges.
+      // - If it has connections, animate along those connections.
+      // - If it has zero connections, curEdges is [] (suppressed on that single disconnected entity).
+      // If no entity is selected:
+      // - Keep movement dots flowing across all visible edges (do not hide when isolate mode is active).
       let curEdges: Graph3DEdge[] = [];
       if (activeSelectedId) {
         curEdges = connectedEdgesRef.current;
-      } else if (!isIsolatedMode) {
+      } else {
         curEdges = allEdges;
       }
 
@@ -1516,6 +1573,7 @@ export default function Network3DGraph({
       container.removeEventListener('pointerdown', onPointerDown);
       container.removeEventListener('mousemove', onMouseMove);
       container.removeEventListener('click', onClick);
+      container.removeEventListener('wheel', onWheel);
       hRingGeo.dispose();
       hRingMat.dispose();
       vRingGeo.dispose();
