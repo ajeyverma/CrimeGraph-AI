@@ -46,6 +46,8 @@ interface Network3DGraphProps {
   onSwitchTo2D?: () => void;
   showGlobeDiagonals?: boolean;
   investigationCase?: string;
+  isLightTheme?: boolean;
+  onThemeChange?: (isLight: boolean) => void;
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -72,6 +74,9 @@ const TYPE_THREE_COLORS: Record<string, THREE.Color> = {
   Event: new THREE.Color('#ec4899'),
 };
 const DEFAULT_PARTICLE_COLOR = new THREE.Color('#38bdf8');
+export const DEFAULT_CAMERA_POS = new THREE.Vector3(0, 130, 850);
+export const DEFAULT_TARGET_POS = new THREE.Vector3(0, 0, 0);
+
 
 const renderEntityIcon = (type: string, size = 14, color?: string) => {
   const iconProps = { size, color: color || TYPE_COLORS[type] || '#94a3b8', strokeWidth: 2 };
@@ -360,6 +365,8 @@ export default function Network3DGraph({
   onSwitchTo2D,
   showGlobeDiagonals = SHOW_GLOBE_DIAGONALS,
   investigationCase,
+  isLightTheme: propIsLightTheme,
+  onThemeChange,
 }: Network3DGraphProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const [autoRotate, setAutoRotate] = useState(false);
@@ -413,9 +420,16 @@ export default function Network3DGraph({
   const showGlobeRef = useRef(true);
   const globeRotatingRef = useRef(true);
 
-  const [isLightTheme, setIsLightTheme] = useState(false);
-  const isLightThemeRef = useRef(false);
+  const [internalLightTheme, setInternalLightTheme] = useState(false);
+  const isLightTheme = propIsLightTheme !== undefined ? propIsLightTheme : internalLightTheme;
+  const isLightThemeRef = useRef(isLightTheme);
   const gridRef = useRef<THREE.GridHelper | null>(null);
+
+  const toggleTheme = useCallback(() => {
+    const nextVal = !isLightTheme;
+    setInternalLightTheme(nextVal);
+    onThemeChange?.(nextVal);
+  }, [isLightTheme, onThemeChange]);
 
   useEffect(() => {
     const isGlobeVisible = showGlobe && activeLayout === 'spherical';
@@ -547,6 +561,7 @@ export default function Network3DGraph({
   const controlsRef = useRef<OrbitControls | null>(null);
   const viewHelperRef = useRef<ViewHelper | null>(null);
   const animFrameId = useRef<number | null>(null);
+  const cameraAnimFrameRef = useRef<number | null>(null);
 
   const nodeMeshes = useRef<Map<string, THREE.Mesh>>(new Map());
   const haloMeshes = useRef<Map<string, THREE.Mesh>>(new Map());
@@ -599,6 +614,11 @@ export default function Network3DGraph({
     const pos = mesh ? mesh.position.clone() : (simPos ? new THREE.Vector3(simPos.x, simPos.y, simPos.z) : new THREE.Vector3(0, 0, 0));
     const targetPos = new THREE.Vector3(pos.x + 40, pos.y + 30, pos.z + 80);
 
+    if (cameraAnimFrameRef.current) {
+      cancelAnimationFrame(cameraAnimFrameRef.current);
+      cameraAnimFrameRef.current = null;
+    }
+
     let t = 0;
     const startPos = camera.position.clone();
     const flyAnim = () => {
@@ -607,10 +627,50 @@ export default function Network3DGraph({
       camera.position.lerpVectors(startPos, targetPos, ease);
       controls.target.lerp(pos, 0.08);
       controls.update();
-      if (t < 1) requestAnimationFrame(flyAnim);
+      if (t < 1) {
+        cameraAnimFrameRef.current = requestAnimationFrame(flyAnim);
+      } else {
+        cameraAnimFrameRef.current = null;
+      }
     };
-    flyAnim();
+    cameraAnimFrameRef.current = requestAnimationFrame(flyAnim);
   }, [onSelectNode]);
+
+  // Smooth camera reset to default view and center target (used for both double click and toolbar reset)
+  const resetCameraToDefault = useCallback(() => {
+    selectedNodeIdRef.current = null;
+    connectedEdgesRef.current = [];
+    onSelectNode(null);
+
+    const camera = cameraRef.current;
+    const controls = controlsRef.current;
+    if (!camera || !controls) return;
+
+    if (cameraAnimFrameRef.current) {
+      cancelAnimationFrame(cameraAnimFrameRef.current);
+      cameraAnimFrameRef.current = null;
+    }
+
+    let t = 0;
+    const startCamPos = camera.position.clone();
+    const startTarget = controls.target.clone();
+
+    const centerAnim = () => {
+      t += 0.04;
+      const ease = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(t, 1));
+      camera.position.lerpVectors(startCamPos, DEFAULT_CAMERA_POS, ease);
+      controls.target.lerpVectors(startTarget, DEFAULT_TARGET_POS, ease);
+      camera.up.set(0, 1, 0);
+      controls.update();
+      if (t < 1) {
+        cameraAnimFrameRef.current = requestAnimationFrame(centerAnim);
+      } else {
+        cameraAnimFrameRef.current = null;
+      }
+    };
+    cameraAnimFrameRef.current = requestAnimationFrame(centerAnim);
+  }, [onSelectNode]);
+
 
   // 3D Search State & Logic
   const [searchQuery, setSearchQuery] = useState('');
@@ -908,9 +968,9 @@ export default function Network3DGraph({
     scene.background = new THREE.Color(initialBg);
     scene.fog = new THREE.FogExp2(initialBg, isLightThemeRef.current ? 0.0008 : 0.0012);
 
-    // 2. Camera (Balanced default framing so cyber globe and all nodes fit beautifully)
+    // 2. Camera (Balanced zoomed-out default framing so cyber globe and all nodes fit comfortably in screen)
     const camera = new THREE.PerspectiveCamera(50, width / height, 1, 4000);
-    camera.position.set(0, 95, 520);
+    camera.position.copy(DEFAULT_CAMERA_POS);
     cameraRef.current = camera;
 
     // 3. WebGL Renderer
@@ -930,7 +990,7 @@ export default function Network3DGraph({
     controls.dampingFactor = 0.06;
     controls.autoRotate = autoRotate;
     controls.autoRotateSpeed = 0.8;
-    controls.maxDistance = 1600;
+    controls.maxDistance = 2400;
     controls.minDistance = 30;
     controls.enableZoom = false; // Disable default center zoom; custom zoom-to-mouse-pointer is handled via wheel event
     controlsRef.current = controls;
@@ -1116,7 +1176,7 @@ export default function Network3DGraph({
 
     // Smooth transition to Isometric perspective
     const animateToIsometric = () => {
-      const currentDist = camera.position.distanceTo(controls.target) || 520;
+      const currentDist = camera.position.distanceTo(controls.target) || DEFAULT_CAMERA_POS.length();
       const isoDir = new THREE.Vector3(1, 0.75, 1).normalize();
       const targetPos = controls.target.clone().add(isoDir.multiplyScalar(currentDist));
 
@@ -1267,28 +1327,8 @@ export default function Network3DGraph({
       // If user double-clicked directly on a node, let node interaction handle it
       if (intersects.length > 0) return;
 
-      // Blank space double-clicked: deselect and smoothly animate camera and graph back to center
-      selectedNodeIdRef.current = null;
-      connectedEdgesRef.current = [];
-      onSelectNode(null);
-
-      let t = 0;
-      const startCamPos = camera.position.clone();
-      const startTarget = controls.target.clone();
-      const targetCamPos = new THREE.Vector3(0, 95, 520);
-      const targetTarget = new THREE.Vector3(0, 0, 0);
-
-      const centerAnim = () => {
-        t += 0.04;
-        const ease = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(t, 1));
-        camera.position.lerpVectors(startCamPos, targetCamPos, ease);
-        controls.target.lerpVectors(startTarget, targetTarget, ease);
-        controls.update();
-        if (t < 1) {
-          requestAnimationFrame(centerAnim);
-        }
-      };
-      centerAnim();
+      // Blank space double-clicked: reset camera and graph back to default view
+      resetCameraToDefault();
     };
 
     container.addEventListener('pointerdown', onPointerDown);
@@ -1945,31 +1985,7 @@ export default function Network3DGraph({
 
   // Camera reset (Smooth animation back to center default view framing)
   const handleResetCamera = () => {
-    selectedNodeIdRef.current = null;
-    connectedEdgesRef.current = [];
-    onSelectNode(null);
-
-    const camera = cameraRef.current;
-    const controls = controlsRef.current;
-    if (!camera || !controls) return;
-
-    let t = 0;
-    const startCamPos = camera.position.clone();
-    const startTarget = controls.target.clone();
-    const targetCamPos = new THREE.Vector3(0, 95, 520);
-    const targetTarget = new THREE.Vector3(0, 0, 0);
-
-    const centerAnim = () => {
-      t += 0.04;
-      const ease = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(t, 1));
-      camera.position.lerpVectors(startCamPos, targetCamPos, ease);
-      controls.target.lerpVectors(startTarget, targetTarget, ease);
-      controls.update();
-      if (t < 1) {
-        requestAnimationFrame(centerAnim);
-      }
-    };
-    centerAnim();
+    resetCameraToDefault();
   };
 
   const handleZoom = (factor: number) => {
@@ -2149,7 +2165,7 @@ export default function Network3DGraph({
 
         {/* Light / Dark Theme Toggle */}
         <button
-          onClick={() => setIsLightTheme(!isLightTheme)}
+          onClick={toggleTheme}
           style={{
             width: 30,
             height: 30,
@@ -3001,7 +3017,7 @@ export default function Network3DGraph({
               <div>• <strong>Right Click + Drag:</strong> Pan / Translate View</div>
               <div>• <strong>Scroll Wheel:</strong> Zoom Towards Mouse Pointer</div>
               <div>• <strong>Click Any Node:</strong> Focus Camera & Dossier</div>
-              <div>• <strong>Double Click Blank Space:</strong> Move Graph to Center</div>
+              <div>• <strong>Double Click Blank Space:</strong> Reset View to Default</div>
               <div>• <strong>Bottom-Right Gizmo:</strong> Snap X, Y, Z, or Isometric</div>
             </div>
           )}

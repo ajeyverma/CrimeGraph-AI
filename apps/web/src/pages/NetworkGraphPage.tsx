@@ -335,6 +335,7 @@ export default function NetworkGraphPage() {
   const [showDossierModal, setShowDossierModal] = useState(false);
   const [exportDropdownOpen, setExportDropdownOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [is3DLightTheme, setIs3DLightTheme] = useState(false);
   const graphContainerRef = useRef<HTMLDivElement>(null);
 
   // 2D Floating Filter, Search & Menu State
@@ -1246,7 +1247,7 @@ export default function NetworkGraphPage() {
             width: '100vw',
             height: '100vh',
             zIndex: 9999,
-            background: viewDimension === '3d' ? '#080c18' : '#f8fafc',
+            background: viewDimension === '3d' ? (is3DLightTheme ? '#f8fafc' : '#080c18') : '#f8fafc',
             padding: 0,
             margin: 0,
             border: 'none',
@@ -1269,7 +1270,7 @@ export default function NetworkGraphPage() {
             padding: 0,
             width: '100%',
             height: '100%',
-            background: viewDimension === '3d' ? '#070c18' : 'radial-gradient(#e2e8f0 1.2px, #f8fafc 1.2px)',
+            background: viewDimension === '3d' ? (is3DLightTheme ? '#f8fafc' : '#070c18') : 'radial-gradient(#e2e8f0 1.2px, #f8fafc 1.2px)',
             backgroundSize: viewDimension === '3d' ? 'auto' : '24px 24px',
           }}
         >
@@ -2029,6 +2030,8 @@ export default function NetworkGraphPage() {
                 onToggleFullscreen={toggleFullscreen}
                 onSwitchTo2D={() => setViewDimension('2d')}
                 investigationCase={investigationCase || undefined}
+                isLightTheme={is3DLightTheme}
+                onThemeChange={setIs3DLightTheme}
               />
             </div>
           )}
@@ -2125,138 +2128,168 @@ export default function NetworkGraphPage() {
         </div>
 
         {/* Right panel — entity details */}
-        {(selectedNode || selectedEdge) && (
-          <div className="slide-in-right" style={{
-            width: 350,
-            flexShrink: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 12,
-            overflowY: 'auto',
-            maxHeight: '100%',
-            height: '100%',
-            background: viewDimension === '3d' ? 'rgba(15, 23, 42, 0.96)' : '#ffffff',
-            backdropFilter: 'blur(16px)',
-            borderLeft: viewDimension === '3d' ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid var(--border-primary, #cbd5e1)',
-            boxShadow: '-4px 0 20px rgba(0, 0, 0, 0.08)',
-            borderRadius: 0,
-            margin: 0,
-            padding: 16,
-            zIndex: 30,
-          }}>
-            {selectedNode && (
-              <div className="card" style={{ flex: 'none' }}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                      <span style={{ fontSize: '1.2rem' }}>{NODE_ICONS[selectedNode.nodeType]}</span>
-                      <span className={`badge badge-${selectedNode.nodeType?.toLowerCase()}`}>{selectedNode.nodeType}</span>
+        {(selectedNode || selectedEdge) && (() => {
+          const isDarkDossier = viewDimension === '3d' && !is3DLightTheme;
+          return (
+            <div className="slide-in-right" style={{
+              width: 350,
+              flexShrink: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+              overflowY: 'auto',
+              maxHeight: '100%',
+              height: '100%',
+              background: isDarkDossier ? 'rgba(15, 23, 42, 0.96)' : '#ffffff',
+              backdropFilter: 'blur(16px)',
+              borderLeft: isDarkDossier ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid var(--border-primary, #cbd5e1)',
+              boxShadow: isDarkDossier ? '-4px 0 20px rgba(0, 0, 0, 0.4)' : '-4px 0 20px rgba(0, 0, 0, 0.08)',
+              borderRadius: 0,
+              margin: 0,
+              padding: 16,
+              zIndex: 30,
+              color: isDarkDossier ? '#f8fafc' : 'inherit',
+            }}>
+              {selectedNode && (
+                <div className="card" style={{
+                  flex: 'none',
+                  background: isDarkDossier ? 'rgba(30, 41, 59, 0.7)' : 'var(--bg-card, #ffffff)',
+                  border: isDarkDossier ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid var(--border-primary)',
+                  color: isDarkDossier ? '#f8fafc' : 'inherit',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <span style={{ fontSize: '1.2rem' }}>{NODE_ICONS[selectedNode.nodeType]}</span>
+                        <span className={`badge badge-${selectedNode.nodeType?.toLowerCase()}`}>{selectedNode.nodeType}</span>
+                      </div>
+                      <h3 style={{ fontSize: '1rem', color: isDarkDossier ? '#f8fafc' : 'inherit' }}>{getNodeLabel(selectedNode)}</h3>
                     </div>
-                    <h3 style={{ fontSize: '1rem' }}>{getNodeLabel(selectedNode)}</h3>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ color: isDarkDossier ? '#94a3b8' : undefined }}
+                      onClick={() => { setSelectedNode(null); if (cyInstance.current) cyInstance.current.elements().removeClass('highlighted dimmed'); }}
+                    >
+                      <X size={14} />
+                    </button>
                   </div>
-                  <button className="btn btn-ghost btn-sm" onClick={() => { setSelectedNode(null); if (cyInstance.current) cyInstance.current.elements().removeClass('highlighted dimmed'); }}>
-                    <X size={14} />
-                  </button>
-                </div>
 
-                {/* Entity properties */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {Object.entries(selectedNode)
-                    .filter(([k]) => !['id', 'nodeType', 'createdAt', 'communityId'].includes(k))
-                    .filter(([, v]) => v !== null && v !== undefined && v !== '')
-                    .map(([k, v]) => (
-                      <div key={k} style={{ display: 'flex', gap: 8, fontSize: '0.8rem' }}>
-                        <span style={{ color: 'var(--text-muted)', textTransform: 'capitalize', width: 100, flexShrink: 0 }}>
-                          {k.replace(/([A-Z])/g, ' $1').toLowerCase()}
-                        </span>
-                        <span style={{ color: 'var(--text-secondary)', wordBreak: 'break-all' }}>
-                          {String(v).substring(0, 60)}
+                  {/* Entity properties */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {Object.entries(selectedNode)
+                      .filter(([k]) => !['id', 'nodeType', 'createdAt', 'communityId'].includes(k))
+                      .filter(([, v]) => v !== null && v !== undefined && v !== '')
+                      .map(([k, v]) => (
+                        <div key={k} style={{ display: 'flex', gap: 8, fontSize: '0.8rem' }}>
+                          <span style={{ color: isDarkDossier ? '#94a3b8' : 'var(--text-muted)', textTransform: 'capitalize', width: 100, flexShrink: 0 }}>
+                            {k.replace(/([A-Z])/g, ' $1').toLowerCase()}
+                          </span>
+                          <span style={{ color: isDarkDossier ? '#e2e8f0' : 'var(--text-secondary)', wordBreak: 'break-all' }}>
+                            {String(v).substring(0, 60)}
+                          </span>
+                        </div>
+                      ))}
+                  </div>
+
+                  <div style={{ marginTop: 14, display: 'flex', gap: 6 }}>
+                    <button className="btn btn-primary btn-sm" onClick={() => expandNode(selectedNode)}>
+                      <ChevronRight size={12} /> Expand
+                    </button>
+                    <a
+                      href={`/entities/${selectedNode.nodeType}/${selectedNode.id}`}
+                      className="btn btn-secondary btn-sm"
+                      style={isDarkDossier ? { background: 'rgba(255,255,255,0.08)', color: '#f8fafc', border: '1px solid rgba(255,255,255,0.15)' } : undefined}
+                      target="_blank"
+                    >
+                      <Info size={12} /> Full Profile
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              {selectedEdge && (
+                <div className="card" style={{
+                  flex: 'none',
+                  background: isDarkDossier ? 'rgba(30, 41, 59, 0.7)' : 'var(--bg-card, #ffffff)',
+                  border: isDarkDossier ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid var(--border-primary)',
+                  color: isDarkDossier ? '#f8fafc' : 'inherit',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <h4 style={{ fontSize: '0.875rem', color: isDarkDossier ? '#f8fafc' : 'inherit' }}>Relationship Details</h4>
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ color: isDarkDossier ? '#94a3b8' : undefined }}
+                      onClick={() => setSelectedEdge(null)}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <div style={{
+                      padding: '8px 10px',
+                      background: isDarkDossier ? 'rgba(56, 189, 248, 0.15)' : 'var(--bg-tertiary)',
+                      borderRadius: 6, textAlign: 'center', fontSize: '0.875rem',
+                      fontWeight: 600,
+                      color: isDarkDossier ? '#38bdf8' : 'var(--text-accent)',
+                    }}>
+                      {selectedEdge.type?.replace(/_/g, ' ')}
+                    </div>
+                    {[
+                      { label: 'Confidence', value: selectedEdge.confidence ? `${Math.round(Number(selectedEdge.confidence) * 100)}%` : '—' },
+                      { label: 'Timestamp', value: selectedEdge.timestamp ? new Date(selectedEdge.timestamp).toLocaleString('en-IN') : '—' },
+                      { label: 'Source', value: selectedEdge.relSource || '—' },
+                      { label: 'Record Ref', value: selectedEdge.recordRef || '—' },
+                    ].map(item => (
+                      <div key={item.label} style={{ display: 'flex', gap: 8, fontSize: '0.8rem' }}>
+                        <span style={{ color: isDarkDossier ? '#94a3b8' : 'var(--text-muted)', width: 90, flexShrink: 0 }}>{item.label}</span>
+                        <span style={{ color: isDarkDossier ? '#e2e8f0' : 'var(--text-secondary)', fontFamily: item.label === 'Record Ref' ? 'var(--font-mono)' : undefined }}>
+                          {item.value}
                         </span>
                       </div>
                     ))}
-                </div>
-
-                <div style={{ marginTop: 14, display: 'flex', gap: 6 }}>
-                  <button className="btn btn-primary btn-sm" onClick={() => expandNode(selectedNode)}>
-                    <ChevronRight size={12} /> Expand
-                  </button>
-                  <a
-                    href={`/entities/${selectedNode.nodeType}/${selectedNode.id}`}
-                    className="btn btn-secondary btn-sm"
-                    target="_blank"
-                  >
-                    <Info size={12} /> Full Profile
-                  </a>
-                </div>
-              </div>
-            )}
-
-            {selectedEdge && (
-              <div className="card" style={{ flex: 'none' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                  <h4 style={{ fontSize: '0.875rem' }}>Relationship Details</h4>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setSelectedEdge(null)}>
-                    <X size={14} />
-                  </button>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  <div style={{
-                    padding: '8px 10px', background: 'var(--bg-tertiary)',
-                    borderRadius: 6, textAlign: 'center', fontSize: '0.875rem',
-                    fontWeight: 600, color: 'var(--text-accent)',
-                  }}>
-                    {selectedEdge.type?.replace(/_/g, ' ')}
                   </div>
-                  {[
-                    { label: 'Confidence', value: selectedEdge.confidence ? `${Math.round(Number(selectedEdge.confidence) * 100)}%` : '—' },
-                    { label: 'Timestamp', value: selectedEdge.timestamp ? new Date(selectedEdge.timestamp).toLocaleString('en-IN') : '—' },
-                    { label: 'Source', value: selectedEdge.relSource || '—' },
-                    { label: 'Record Ref', value: selectedEdge.recordRef || '—' },
-                  ].map(item => (
-                    <div key={item.label} style={{ display: 'flex', gap: 8, fontSize: '0.8rem' }}>
-                      <span style={{ color: 'var(--text-muted)', width: 90, flexShrink: 0 }}>{item.label}</span>
-                      <span style={{ color: 'var(--text-secondary)', fontFamily: item.label === 'Record Ref' ? 'var(--font-mono)' : undefined }}>
-                        {item.value}
-                      </span>
+
+                  <div className="ai-disclaimer" style={{ marginTop: 10, color: isDarkDossier ? '#94a3b8' : undefined }}>
+                    Relationship shown is based on recorded data. Does not imply criminal activity.
+                  </div>
+                </div>
+              )}
+
+              {/* Path result panel */}
+              {pathResult && pathResult.length > 0 && (
+                <div className="card" style={{
+                  flex: 'none',
+                  background: isDarkDossier ? 'rgba(30, 41, 59, 0.7)' : 'var(--bg-card, #ffffff)',
+                  border: isDarkDossier ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid var(--border-primary)',
+                  color: isDarkDossier ? '#f8fafc' : 'inherit',
+                }}>
+                  <h4 style={{ fontSize: '0.875rem', marginBottom: 10, color: isDarkDossier ? '#f8fafc' : 'inherit' }}>Path Analysis Results</h4>
+                  {pathResult.map((path: any, i: number) => (
+                    <div key={i} style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: '0.8rem', color: isDarkDossier ? '#cbd5e1' : 'var(--text-secondary)', marginBottom: 4 }}>
+                        Path {i + 1} ({path.length} hops):
+                      </div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                        {path.nodes?.map((n: any, j: number) => (
+                          <span key={j} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                            <span className={`badge badge-${n.nodeType?.toLowerCase()}`} style={{ fontSize: '0.65rem' }}>
+                              {n.name || n.id}
+                            </span>
+                            {j < path.nodes.length - 1 && <ChevronRight size={10} color={isDarkDossier ? '#64748b' : 'var(--text-muted)'} />}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="ai-disclaimer" style={{ marginTop: 6, fontSize: '0.72rem', color: isDarkDossier ? '#94a3b8' : undefined }}>
+                        {path.disclaimer || 'Analytical lead — requires investigator review'}
+                      </div>
                     </div>
                   ))}
                 </div>
-
-                <div className="ai-disclaimer" style={{ marginTop: 10 }}>
-                  Relationship shown is based on recorded data. Does not imply criminal activity.
-                </div>
-              </div>
-            )}
-
-            {/* Path result panel */}
-            {pathResult && pathResult.length > 0 && (
-              <div className="card" style={{ flex: 'none' }}>
-                <h4 style={{ fontSize: '0.875rem', marginBottom: 10 }}>Path Analysis Results</h4>
-                {pathResult.map((path: any, i: number) => (
-                  <div key={i} style={{ marginBottom: 10 }}>
-                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: 4 }}>
-                      Path {i + 1} ({path.length} hops):
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                      {path.nodes?.map((n: any, j: number) => (
-                        <span key={j} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
-                          <span className={`badge badge-${n.nodeType?.toLowerCase()}`} style={{ fontSize: '0.65rem' }}>
-                            {n.name || n.id}
-                          </span>
-                          {j < path.nodes.length - 1 && <ChevronRight size={10} color="var(--text-muted)" />}
-                        </span>
-                      ))}
-                    </div>
-                    <div className="ai-disclaimer" style={{ marginTop: 6, fontSize: '0.72rem' }}>
-                      {path.disclaimer || 'Analytical lead — requires investigator review'}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Official NCRB Investigation Dossier Modal */}
