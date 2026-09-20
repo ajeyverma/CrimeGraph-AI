@@ -89,13 +89,13 @@ const renderEntityIcon = (type: string, size = 14, color?: string) => {
   }
 };
 
-export type Layout3DType = 'spherical' | 'concentric' | 'cylinder' | 'grid' | 'cone';
+export type Layout3DType = 'spherical' | 'isolated' | 'concentric' | 'cylinder' | 'grid' | 'cone';
 
 export interface Layout3DOption {
   id: Layout3DType;
   label: string;
   badge: string;
-  description: string;
+  description?: string;
   icon: React.ComponentType<{ size?: number; color?: string; style?: React.CSSProperties }>;
 }
 
@@ -104,35 +104,36 @@ export const LAYOUT_3D_OPTIONS: Layout3DOption[] = [
     id: 'spherical',
     label: 'Spherical Orbit',
     badge: 'Present',
-    description: 'Present default planetary distribution around the central cyber globe',
     icon: Globe,
+  },
+  {
+    id: 'isolated',
+    label: 'Isolated Connection',
+    badge: 'Isolated',
+    icon: Target,
   },
   {
     id: 'concentric',
     label: 'Concentric Risk Spheres',
     badge: 'Risk Orbit',
-    description: 'Nested 3D danger spheres arranged by risk assessment level',
     icon: Disc,
   },
   {
     id: 'cylinder',
     label: 'Helical Cyber Cylinder',
     badge: 'DNA Spiral',
-    description: 'Vertical 3D double helix spiral for timeline & communication analysis',
     icon: Shuffle,
   },
   {
     id: 'grid',
     label: '3D Matrix Grid',
     badge: 'Cube Lattice',
-    description: 'Structured 3D cubic volumetric lattice coordinates',
     icon: LayoutGrid,
   },
   {
     id: 'cone',
     label: 'Hierarchical Pyramid',
     badge: 'Tree Cone',
-    description: 'Tiered pyramidal cone branching from cases & key targets downward',
     icon: Network,
   },
 ];
@@ -157,6 +158,66 @@ export function calculateLayoutPositions(
           x: r * Math.sin(phi) * Math.cos(theta),
           y: r * Math.sin(phi) * Math.sin(theta),
           z: r * Math.cos(phi),
+        });
+      });
+      break;
+    }
+
+    case 'isolated': {
+      // Find the focal target: selectedNodeId if present, otherwise highest-risk or most connected node
+      let targetId = selectedNodeId;
+      if (!targetId || !nodes.some(n => n.id === targetId)) {
+        const degreeMap = new Map<string, number>();
+        edges.forEach(e => {
+          degreeMap.set(e.source, (degreeMap.get(e.source) || 0) + 1);
+          degreeMap.set(e.target, (degreeMap.get(e.target) || 0) + 1);
+        });
+        let maxDeg = -1;
+        nodes.forEach(n => {
+          const deg = degreeMap.get(n.id) || 0;
+          if (deg > maxDeg) {
+            maxDeg = deg;
+            targetId = n.id;
+          }
+        });
+        if (!targetId && nodes.length > 0) targetId = nodes[0].id;
+      }
+
+      // Directly connected neighbors of targetId
+      const firstDegree = new Set<string>();
+      edges.forEach(e => {
+        if (e.source === targetId) firstDegree.add(e.target);
+        if (e.target === targetId) firstDegree.add(e.source);
+      });
+
+      // Place target node at center (0, 0, 0)
+      if (targetId) {
+        positions.set(targetId, { x: 0, y: 0, z: 0 });
+      }
+
+      // First-degree connected neighbors arranged in an inner orbit ring
+      const neighborList = nodes.filter(n => n.id !== targetId && firstDegree.has(n.id));
+      const neighborRadius = Math.max(90, Math.min(160, 50 + neighborList.length * 10));
+      neighborList.forEach((n, idx) => {
+        const angle = (idx / (neighborList.length || 1)) * Math.PI * 2;
+        const elevation = (idx % 3 - 1) * 22;
+        positions.set(n.id, {
+          x: neighborRadius * Math.cos(angle),
+          y: elevation,
+          z: neighborRadius * Math.sin(angle),
+        });
+      });
+
+      // Remaining distant nodes arranged in an outer spherical perimeter
+      const remainingNodes = nodes.filter(n => n.id !== targetId && !firstDegree.has(n.id));
+      const outerRadius = Math.max(280, neighborRadius + 140);
+      remainingNodes.forEach((n, idx) => {
+        const phi = Math.acos(1 - 2 * (idx + 0.5) / (remainingNodes.length || 1));
+        const theta = Math.PI * (1 + Math.sqrt(5)) * (idx + 0.5);
+        positions.set(n.id, {
+          x: outerRadius * Math.sin(phi) * Math.cos(theta),
+          y: outerRadius * Math.sin(phi) * Math.sin(theta) * 0.75,
+          z: outerRadius * Math.cos(phi),
         });
       });
       break;
@@ -739,7 +800,10 @@ export default function Network3DGraph({
 
   useEffect(() => {
     selectedNodeIdRef.current = selectedNodeId;
-  }, [selectedNodeId]);
+    if (activeLayout === 'isolated' && selectedNodeId) {
+      apply3DLayout('isolated');
+    }
+  }, [selectedNodeId, activeLayout, apply3DLayout]);
 
   useEffect(() => {
     connectedEdgesRef.current = connectedEdges;
@@ -2254,7 +2318,7 @@ export default function Network3DGraph({
               position: 'absolute',
               top: 36,
               left: 0,
-              width: 290,
+              width: 255,
               background: isLightTheme ? 'rgba(255, 255, 255, 0.98)' : 'rgba(15, 23, 42, 0.96)',
               backdropFilter: 'blur(16px)',
               border: isLightTheme ? '1px solid rgba(203, 213, 225, 0.9)' : '1px solid rgba(255, 255, 255, 0.15)',
@@ -2300,9 +2364,9 @@ export default function Network3DGraph({
                       onClick={() => apply3DLayout(opt.id)}
                       style={{
                         display: 'flex',
-                        alignItems: 'flex-start',
+                        alignItems: 'center',
                         gap: 10,
-                        padding: '8px 10px',
+                        padding: '7px 9px',
                         borderRadius: 7,
                         background: isActive
                           ? isLightTheme ? 'rgba(2, 132, 199, 0.1)' : 'rgba(56, 189, 248, 0.14)'
@@ -2326,8 +2390,8 @@ export default function Network3DGraph({
                       }}
                     >
                       <div style={{
-                        width: 28,
-                        height: 28,
+                        width: 26,
+                        height: 26,
                         borderRadius: 6,
                         display: 'flex',
                         alignItems: 'center',
@@ -2339,47 +2403,39 @@ export default function Network3DGraph({
                           ? '#ffffff'
                           : isLightTheme ? '#0f172a' : '#cbd5e1',
                         flexShrink: 0,
-                        marginTop: 1,
                       }}>
-                        <IconComp size={15} />
+                        <IconComp size={14} />
                       </div>
 
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
-                          <span style={{
-                            fontSize: '0.78rem',
-                            fontWeight: isActive ? 700 : 600,
-                            color: isActive
-                              ? isLightTheme ? '#0284c7' : '#38bdf8'
-                              : isLightTheme ? '#0f172a' : '#f1f5f9',
-                          }}>
-                            {opt.label}
-                          </span>
-                          <span style={{
-                            fontSize: '0.62rem',
-                            fontWeight: 700,
-                            padding: '1px 5px',
-                            borderRadius: 4,
-                            background: isActive
-                              ? isLightTheme ? 'rgba(2, 132, 199, 0.15)' : 'rgba(56, 189, 248, 0.25)'
-                              : isLightTheme ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.08)',
-                            color: isActive
-                              ? isLightTheme ? '#0284c7' : '#38bdf8'
-                              : isLightTheme ? '#64748b' : '#94a3b8',
-                            letterSpacing: '0.02em',
-                            whiteSpace: 'nowrap',
-                          }}>
-                            {opt.badge}
-                          </span>
-                        </div>
-                        <p style={{
-                          margin: '2px 0 0 0',
-                          fontSize: '0.68rem',
-                          lineHeight: '1.25',
-                          color: isLightTheme ? '#64748b' : 'rgba(148, 163, 184, 0.85)',
+                      <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                        <span style={{
+                          fontSize: '0.78rem',
+                          fontWeight: isActive ? 700 : 600,
+                          color: isActive
+                            ? isLightTheme ? '#0284c7' : '#38bdf8'
+                            : isLightTheme ? '#0f172a' : '#f1f5f9',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
                         }}>
-                          {opt.description}
-                        </p>
+                          {opt.label}
+                        </span>
+                        <span style={{
+                          fontSize: '0.62rem',
+                          fontWeight: 700,
+                          padding: '1px 5px',
+                          borderRadius: 4,
+                          background: isActive
+                            ? isLightTheme ? 'rgba(2, 132, 199, 0.15)' : 'rgba(56, 189, 248, 0.25)'
+                            : isLightTheme ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.08)',
+                          color: isActive
+                            ? isLightTheme ? '#0284c7' : '#38bdf8'
+                            : isLightTheme ? '#64748b' : '#94a3b8',
+                          letterSpacing: '0.02em',
+                          whiteSpace: 'nowrap',
+                        }}>
+                          {opt.badge}
+                        </span>
                       </div>
                     </div>
                   );
