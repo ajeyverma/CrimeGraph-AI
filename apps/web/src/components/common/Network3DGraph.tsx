@@ -5,7 +5,7 @@ import { ViewHelper } from 'three/examples/jsm/helpers/ViewHelper.js';
 import {
   RotateCw, ZoomIn, ZoomOut, Maximize2, Minimize2, Play, Pause,
   Layers, Eye, EyeOff, RefreshCw, Sparkles, Filter, Check, ChevronDown,
-  Search, X, Globe, RotateCcw,
+  Search, X, Globe, RotateCcw, Sun, Moon,
   User, Phone as PhoneIcon, Car, Building2, MapPin, CreditCard, Briefcase, Package, Calendar, Circle,
   Network, Box
 } from 'lucide-react';
@@ -44,6 +44,7 @@ interface Network3DGraphProps {
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
   onSwitchTo2D?: () => void;
+  showGlobeDiagonals?: boolean;
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -74,6 +75,36 @@ const renderEntityIcon = (type: string, size = 14, color?: string) => {
   }
 };
 
+const MAX_PARTICLES = 200;
+
+/**
+ * GLOBE DIAGONAL FEATURE CONFIGURATION:
+ * • Set SHOW_GLOBE_DIAGONALS = false (default) for a clean orthogonal cyber globe (circular latitude parallels & longitude meridians with ZERO diagonal lines).
+ * • Set SHOW_GLOBE_DIAGONALS = true to enable diagonal triangular wireframe lines dividing each globe grid cell.
+ * • Can also be controlled dynamically via the `showGlobeDiagonals` prop on <Network3DGraph />.
+ */
+export const SHOW_GLOBE_DIAGONALS = true; //@codebtn:control_visibility_of_globe_diagonals
+
+const createDotTexture = () => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    const gradient = ctx.createRadialGradient(32, 32, 2, 32, 32, 30);
+    gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+    gradient.addColorStop(0.3, 'rgba(255, 255, 255, 0.95)');
+    gradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.5)');
+    gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(32, 32, 30, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  return texture;
+};
+
 export default function Network3DGraph({
   nodes,
   edges,
@@ -82,18 +113,28 @@ export default function Network3DGraph({
   isFullscreen,
   onToggleFullscreen,
   onSwitchTo2D,
+  showGlobeDiagonals = SHOW_GLOBE_DIAGONALS,
 }: Network3DGraphProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const [autoRotate, setAutoRotate] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
   const [hoveredNode, setHoveredNode] = useState<Graph3DNode | null>(null);
   const [simRunning, setSimRunning] = useState(false);
+  const simRunningRef = useRef(false);
   const [sceneReady, setSceneReady] = useState(false);
+
+  useEffect(() => {
+    simRunningRef.current = simRunning;
+  }, [simRunning]);
   const [showGlobe, setShowGlobe] = useState(true);
   const [globeRotating, setGlobeRotating] = useState(true);
   const cyberGlobeRef = useRef<THREE.Group | null>(null);
   const showGlobeRef = useRef(true);
   const globeRotatingRef = useRef(true);
+
+  const [isLightTheme, setIsLightTheme] = useState(false);
+  const isLightThemeRef = useRef(false);
+  const gridRef = useRef<THREE.GridHelper | null>(null);
 
   useEffect(() => {
     showGlobeRef.current = showGlobe;
@@ -105,6 +146,66 @@ export default function Network3DGraph({
   useEffect(() => {
     globeRotatingRef.current = globeRotating;
   }, [globeRotating]);
+
+  // Ref & effect for dynamic globe diagonal wireframe visibility
+  const globeDiagonalMeshRef = useRef<THREE.Mesh | null>(null);
+  useEffect(() => {
+    if (globeDiagonalMeshRef.current) {
+      globeDiagonalMeshRef.current.visible = showGlobeDiagonals;
+    }
+  }, [showGlobeDiagonals]);
+
+  useEffect(() => {
+    isLightThemeRef.current = isLightTheme;
+    if (sceneRef.current) {
+      const bgCol = isLightTheme ? '#f8fafc' : '#070c18';
+      sceneRef.current.background = new THREE.Color(bgCol);
+      sceneRef.current.fog = new THREE.FogExp2(bgCol, isLightTheme ? 0.0008 : 0.0012);
+
+      if (gridRef.current) {
+        sceneRef.current.remove(gridRef.current);
+        gridRef.current.geometry.dispose();
+        (gridRef.current.material as THREE.Material).dispose();
+        const newGrid = new THREE.GridHelper(
+          800,
+          40,
+          isLightTheme ? 0x94a3b8 : 0x1e293b,
+          isLightTheme ? 0xe2e8f0 : 0x0f172a
+        );
+        newGrid.position.y = -180;
+        gridRef.current = newGrid;
+        sceneRef.current.add(newGrid);
+      }
+
+      if (globeDiagonalMeshRef.current) {
+        const mat = globeDiagonalMeshRef.current.material as THREE.MeshBasicMaterial;
+        if (mat) {
+          mat.color.setHex(isLightTheme ? 0x0284c7 : 0x0ea5e9);
+          mat.opacity = isLightTheme ? 0.03 : 0.045;
+          mat.needsUpdate = true;
+        }
+      }
+
+      // Update moving data flow particles for light/dark theme visibility
+      if (particleMatRef.current && particleGeoRef.current) {
+        particleMatRef.current.blending = isLightTheme ? THREE.NormalBlending : THREE.AdditiveBlending;
+        particleMatRef.current.opacity = isLightTheme ? 0.95 : 0.85;
+        particleMatRef.current.size = isLightTheme ? 7.0 : 5.0;
+        particleMatRef.current.needsUpdate = true;
+
+        const colAttr = particleGeoRef.current.attributes.color as THREE.BufferAttribute;
+        if (colAttr) {
+          const r = isLightTheme ? 0.01 : 0.25;
+          const g = isLightTheme ? 0.35 : 0.82;
+          const b = isLightTheme ? 0.85 : 1.0;
+          for (let i = 0; i < MAX_PARTICLES; i++) {
+            colAttr.setXYZ(i, r, g, b);
+          }
+          colAttr.needsUpdate = true;
+        }
+      }
+    }
+  }, [isLightTheme]);
 
   // Distinct entity types present in the dataset
   const availableTypes = useMemo(() => {
@@ -180,6 +281,8 @@ export default function Network3DGraph({
   const haloMeshes = useRef<Map<string, THREE.Mesh>>(new Map());
   const edgeLineSegments = useRef<THREE.LineSegments | null>(null);
   const particleSystem = useRef<THREE.Points | null>(null);
+  const particleMatRef = useRef<THREE.PointsMaterial | null>(null);
+  const particleGeoRef = useRef<THREE.BufferGeometry | null>(null);
   const labelSprites = useRef<Map<string, THREE.Sprite>>(new Map());
 
   // 3D physics position data
@@ -298,6 +401,12 @@ export default function Network3DGraph({
   const visibleNodeIdSet = useMemo(() => new Set(visibleNodes.map(n => n.id)), [visibleNodes]);
   const visibleEdges = useMemo(() => edges.filter(e => visibleNodeIdSet.has(e.source) && visibleNodeIdSet.has(e.target)), [edges, visibleNodeIdSet]);
 
+  const visibleNodesRef = useRef(visibleNodes);
+  visibleNodesRef.current = visibleNodes;
+
+  const visibleEdgesRef = useRef(visibleEdges);
+  visibleEdgesRef.current = visibleEdges;
+
   // Initialize 3D physics positions randomly in sphere or preserve existing
   useEffect(() => {
     const existing = simNodes.current;
@@ -334,8 +443,9 @@ export default function Network3DGraph({
     // 1. Scene
     const scene = new THREE.Scene();
     sceneRef.current = scene;
-    scene.background = new THREE.Color('#070c18'); // Cyber intelligence dark
-    scene.fog = new THREE.FogExp2('#070c18', 0.0012);
+    const initialBg = isLightThemeRef.current ? '#f8fafc' : '#070c18';
+    scene.background = new THREE.Color(initialBg);
+    scene.fog = new THREE.FogExp2(initialBg, isLightThemeRef.current ? 0.0008 : 0.0012);
 
     // 2. Camera
     const camera = new THREE.PerspectiveCamera(50, width / height, 1, 4000);
@@ -434,47 +544,80 @@ export default function Network3DGraph({
     scene.add(purpleLight);
 
     // 6. Deep Space Grid Plane
-    const grid = new THREE.GridHelper(800, 40, 0x1e293b, 0x0f172a);
+    const grid = new THREE.GridHelper(
+      800,
+      40,
+      isLightThemeRef.current ? 0x94a3b8 : 0x1e293b,
+      isLightThemeRef.current ? 0xe2e8f0 : 0x0f172a
+    );
     grid.position.y = -180;
     scene.add(grid);
+    gridRef.current = grid;
 
-    // 6b. Central Holographic Cyber Globe
+    // 6b. Central Holographic Cyber Globe (Clean Latitude & Longitude Circles + Optional Diagonals)
     const cyberGlobeGroup = new THREE.Group();
     cyberGlobeRef.current = cyberGlobeGroup;
     cyberGlobeGroup.visible = showGlobeRef.current;
     const globeRadius = Math.max(120, Math.cbrt(visibleNodes.length || 1) * 58);
 
-    const globeGeo = new THREE.SphereGeometry(globeRadius, 24, 16);
-    const globeMat = new THREE.MeshBasicMaterial({
-      color: 0x0284c7,
+    // Optional: Triangular wireframe mesh (adds diagonal lines inside each globe cell when enabled)
+    const diagonalGeo = new THREE.SphereGeometry(globeRadius, 24, 16);
+    const diagonalMat = new THREE.MeshBasicMaterial({
+      color: isLightThemeRef.current ? 0x0284c7 : 0x0ea5e9,
       wireframe: true,
       transparent: true,
-      opacity: 0.10,
+      opacity: isLightThemeRef.current ? 0.03 : 0.045,
     });
-    const globeMesh = new THREE.Mesh(globeGeo, globeMat);
-    cyberGlobeGroup.add(globeMesh);
+    const diagonalMesh = new THREE.Mesh(diagonalGeo, diagonalMat);
+    diagonalMesh.visible = showGlobeDiagonals;
+    globeDiagonalMeshRef.current = diagonalMesh;
+    cyberGlobeGroup.add(diagonalMesh);
 
-    const eqGeo = new THREE.RingGeometry(globeRadius - 0.8, globeRadius + 1.2, 56);
-    const eqMat = new THREE.MeshBasicMaterial({
-      color: 0x38bdf8,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.22,
-    });
-    const eqMesh = new THREE.Mesh(eqGeo, eqMat);
-    eqMesh.rotation.x = Math.PI / 2;
-    cyberGlobeGroup.add(eqMesh);
+    // Shared circular geometry for longitude meridians (vertical great circles)
+    const segments = 64;
+    const meridianPoints: THREE.Vector3[] = [];
+    for (let j = 0; j <= segments; j++) {
+      const theta = (j / segments) * Math.PI * 2;
+      meridianPoints.push(new THREE.Vector3(Math.cos(theta) * globeRadius, Math.sin(theta) * globeRadius, 0));
+    }
+    const meridianGeo = new THREE.BufferGeometry().setFromPoints(meridianPoints);
 
-    const merGeo = new THREE.RingGeometry(globeRadius - 0.8, globeRadius + 1.2, 56);
-    const merMat = new THREE.MeshBasicMaterial({
-      color: 0x818cf8,
-      side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.16,
+    // 12 Longitude Meridians (vertical circles rotated evenly around Y)
+    const meridianCount = 12;
+    for (let m = 0; m < meridianCount; m++) {
+      const isPrime = m === 0 || m === meridianCount / 2;
+      const mMat = new THREE.LineBasicMaterial({
+        color: isPrime ? 0x6366f1 : 0x0284c7,
+        transparent: true,
+        opacity: isPrime ? (isLightThemeRef.current ? 0.10 : 0.14) : (isLightThemeRef.current ? 0.035 : 0.05),
+      });
+      const mLine = new THREE.LineLoop(meridianGeo, mMat);
+      mLine.rotation.y = (m / meridianCount) * Math.PI;
+      cyberGlobeGroup.add(mLine);
+    }
+
+    // Latitude Parallels (horizontal circles at different degrees)
+    const latAngles = [-70, -50, -30, -15, 0, 15, 30, 50, 70];
+    latAngles.forEach(deg => {
+      const rad = (deg * Math.PI) / 180;
+      const r = globeRadius * Math.cos(rad);
+      const y = globeRadius * Math.sin(rad);
+
+      const latPoints: THREE.Vector3[] = [];
+      for (let j = 0; j <= segments; j++) {
+        const theta = (j / segments) * Math.PI * 2;
+        latPoints.push(new THREE.Vector3(Math.cos(theta) * r, y, Math.sin(theta) * r));
+      }
+      const latGeo = new THREE.BufferGeometry().setFromPoints(latPoints);
+      const isEquator = deg === 0;
+      const latMat = new THREE.LineBasicMaterial({
+        color: isEquator ? 0x38bdf8 : 0x0284c7,
+        transparent: true,
+        opacity: isEquator ? (isLightThemeRef.current ? 0.14 : 0.18) : (isLightThemeRef.current ? 0.035 : 0.05),
+      });
+      const latLine = new THREE.LineLoop(latGeo, latMat);
+      cyberGlobeGroup.add(latLine);
     });
-    const merMesh = new THREE.Mesh(merGeo, merMat);
-    merMesh.rotation.y = Math.PI / 2;
-    cyberGlobeGroup.add(merMesh);
 
     scene.add(cyberGlobeGroup);
 
@@ -596,35 +739,42 @@ export default function Network3DGraph({
     resizeObserver.observe(container);
 
     // 9. Particles Traveling along Edges
-    const maxParticles = 200;
     const particleGeo = new THREE.BufferGeometry();
-    const particlePositions = new Float32Array(maxParticles * 3);
-    const particleColors = new Float32Array(maxParticles * 3);
+    const particlePositions = new Float32Array(MAX_PARTICLES * 3);
+    const particleColors = new Float32Array(MAX_PARTICLES * 3);
 
-    for (let i = 0; i < maxParticles; i++) {
+    const isLightInitial = isLightThemeRef.current;
+    for (let i = 0; i < MAX_PARTICLES; i++) {
       particlePositions[i * 3] = 0;
       particlePositions[i * 3 + 1] = 0;
       particlePositions[i * 3 + 2] = 0;
-      particleColors[i * 3] = 0.3;
-      particleColors[i * 3 + 1] = 0.7;
-      particleColors[i * 3 + 2] = 1.0;
+      particleColors[i * 3] = isLightInitial ? 0.01 : 0.25;
+      particleColors[i * 3 + 1] = isLightInitial ? 0.35 : 0.82;
+      particleColors[i * 3 + 2] = isLightInitial ? 0.85 : 1.0;
     }
     particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
     particleGeo.setAttribute('color', new THREE.BufferAttribute(particleColors, 3));
+    particleGeoRef.current = particleGeo;
+
+    const dotTexture = createDotTexture();
 
     const particleMat = new THREE.PointsMaterial({
-      size: 4.5,
+      size: isLightInitial ? 7.0 : 5.0,
       vertexColors: true,
       transparent: true,
-      opacity: 0.85,
-      blending: THREE.AdditiveBlending,
+      opacity: isLightInitial ? 0.95 : 0.85,
+      blending: isLightInitial ? THREE.NormalBlending : THREE.AdditiveBlending,
+      map: dotTexture,
+      depthWrite: false,
     });
+    particleMatRef.current = particleMat;
+
     const pPoints = new THREE.Points(particleGeo, particleMat);
     scene.add(pPoints);
     particleSystem.current = pPoints;
 
     // Track particle progress along random edges
-    const particleEdges = Array.from({ length: maxParticles }, () => ({
+    const particleEdges = Array.from({ length: MAX_PARTICLES }, () => ({
       edgeIndex: Math.floor(Math.random() * (visibleEdges.length || 1)),
       progress: Math.random(),
       speed: 0.006 + Math.random() * 0.008,
@@ -639,7 +789,7 @@ export default function Network3DGraph({
       lastTime = currentTime;
 
       // Force simulation step (Spring-Embedder vector forces)
-      if (simRunning) {
+      if (simRunningRef.current) {
         const sim = simNodes.current;
         const kCenter = 0.0018;
         const kRepel = 24000;
@@ -647,7 +797,7 @@ export default function Network3DGraph({
         const damping = 0.88;
 
         // Repulsion between all pairs
-        const nodeArr = visibleNodes;
+        const nodeArr = visibleNodesRef.current;
         for (let i = 0; i < nodeArr.length; i++) {
           const nA = sim.get(nodeArr[i].id);
           if (!nA) continue;
@@ -681,7 +831,7 @@ export default function Network3DGraph({
         }
 
         // Spring attraction along edges
-        visibleEdges.forEach(e => {
+        visibleEdgesRef.current.forEach(e => {
           const nA = sim.get(e.source);
           const nB = sim.get(e.target);
           if (!nA || !nB) return;
@@ -742,10 +892,10 @@ export default function Network3DGraph({
         const posAttr = edgeLineSegments.current.geometry.attributes.position as THREE.BufferAttribute;
         const sim = simNodes.current;
 
-        visibleEdges.forEach((e, i) => {
+        visibleEdgesRef.current.forEach((e, i) => {
           const nA = sim.get(e.source);
           const nB = sim.get(e.target);
-          if (nA && nB) {
+          if (nA && nB && posAttr.count > i * 2 + 1) {
             posAttr.setXYZ(i * 2, nA.x, nA.y, nA.z);
             posAttr.setXYZ(i * 2 + 1, nB.x, nB.y, nB.z);
           }
@@ -754,32 +904,43 @@ export default function Network3DGraph({
       }
 
       // Update Traveling Data Particles
-      if (particleSystem.current && visibleEdges.length > 0) {
-        const sim = simNodes.current;
-        const posAttr = particleSystem.current.geometry.attributes.position as THREE.BufferAttribute;
+      const curEdges = visibleEdgesRef.current;
+      if (particleSystem.current) {
+        if (!curEdges || curEdges.length === 0) {
+          particleSystem.current.visible = false;
+        } else {
+          particleSystem.current.visible = true;
+          const sim = simNodes.current;
+          const posAttr = particleSystem.current.geometry.attributes.position as THREE.BufferAttribute;
 
-        particleEdges.forEach((p, i) => {
-          const edge = visibleEdges[p.edgeIndex % visibleEdges.length];
-          if (!edge) return;
-
-          const nA = sim.get(edge.source);
-          const nB = sim.get(edge.target);
-          if (nA && nB) {
-            p.progress += p.speed;
-            if (p.progress > 1) {
-              p.progress = 0;
-              p.edgeIndex = Math.floor(Math.random() * visibleEdges.length);
+          particleEdges.forEach((p, i) => {
+            const edge = curEdges[p.edgeIndex % curEdges.length];
+            if (!edge) {
+              posAttr.setXYZ(i, 99999, 99999, 99999);
+              return;
             }
 
-            const t = p.progress;
-            const px = nA.x + (nB.x - nA.x) * t;
-            const py = nA.y + (nB.y - nA.y) * t;
-            const pz = nA.z + (nB.z - nA.z) * t;
+            const nA = sim.get(edge.source);
+            const nB = sim.get(edge.target);
+            if (nA && nB) {
+              p.progress += p.speed;
+              if (p.progress > 1) {
+                p.progress = 0;
+                p.edgeIndex = Math.floor(Math.random() * curEdges.length);
+              }
 
-            posAttr.setXYZ(i, px, py, pz);
-          }
-        });
-        posAttr.needsUpdate = true;
+              const t = p.progress;
+              const px = nA.x + (nB.x - nA.x) * t;
+              const py = nA.y + (nB.y - nA.y) * t;
+              const pz = nA.z + (nB.z - nA.z) * t;
+
+              posAttr.setXYZ(i, px, py, pz);
+            } else {
+              posAttr.setXYZ(i, 99999, 99999, 99999);
+            }
+          });
+          posAttr.needsUpdate = true;
+        }
       }
 
       // Raycast for Hover Effects
@@ -835,10 +996,30 @@ export default function Network3DGraph({
       hRingMat.dispose();
       vRingGeo.dispose();
       vRingMat.dispose();
+      if (gridRef.current) {
+        gridRef.current.geometry.dispose();
+        (gridRef.current.material as THREE.Material).dispose();
+        gridRef.current = null;
+      }
+      cyberGlobeGroup.traverse(child => {
+        if ((child as any).geometry) (child as any).geometry.dispose();
+        if ((child as any).material) (child as any).material.dispose();
+      });
+      if (particleMatRef.current) {
+        if (particleMatRef.current.map) particleMatRef.current.map.dispose();
+        particleMatRef.current.dispose();
+        particleMatRef.current = null;
+      }
+      if (particleGeoRef.current) {
+        particleGeoRef.current.dispose();
+        particleGeoRef.current = null;
+      }
       viewHelper.dispose();
       renderer.dispose();
+      globeDiagonalMeshRef.current = null;
+      container.replaceChildren();
     };
-  }, [visibleNodes, visibleEdges, autoRotate, simRunning]);
+  }, []);
 
   // Sync Node & Edge 3D Geometries into Scene
   useEffect(() => {
@@ -859,6 +1040,20 @@ export default function Network3DGraph({
       scene.remove(edgeLineSegments.current);
       edgeLineSegments.current.geometry.dispose();
       edgeLineSegments.current = null;
+    }
+
+    // Hide particles immediately if no edges are visible
+    if (particleSystem.current) {
+      particleSystem.current.visible = visibleEdges.length > 0;
+      if (visibleEdges.length === 0 && particleGeoRef.current) {
+        const posAttr = particleGeoRef.current.attributes.position as THREE.BufferAttribute;
+        if (posAttr) {
+          for (let i = 0; i < MAX_PARTICLES; i++) {
+            posAttr.setXYZ(i, 99999, 99999, 99999);
+          }
+          posAttr.needsUpdate = true;
+        }
+      }
     }
 
     // Shared Geometries
@@ -912,10 +1107,10 @@ export default function Network3DGraph({
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.font = 'bold 24px "Inter", sans-serif';
-          ctx.fillStyle = isSelected ? '#38bdf8' : '#f8fafc';
+          ctx.fillStyle = isSelected ? (isLightTheme ? '#0284c7' : '#38bdf8') : (isLightTheme ? '#0f172a' : '#f8fafc');
           ctx.textAlign = 'center';
           ctx.textBaseline = 'middle';
-          ctx.shadowColor = 'rgba(0,0,0,0.9)';
+          ctx.shadowColor = isLightTheme ? 'rgba(255,255,255,0.95)' : 'rgba(0,0,0,0.9)';
           ctx.shadowBlur = 6;
 
           const labelText = getNodeLabel(node);
@@ -958,9 +1153,9 @@ export default function Network3DGraph({
         lineColors[i * 6 + 1] = col.g * 0.7;
         lineColors[i * 6 + 2] = col.b * 0.7;
 
-        lineColors[i * 6 + 3] = 0.4;
-        lineColors[i * 6 + 4] = 0.5;
-        lineColors[i * 6 + 5] = 0.7;
+        lineColors[i * 6 + 3] = isLightTheme ? 0.6 : 0.4;
+        lineColors[i * 6 + 4] = isLightTheme ? 0.65 : 0.5;
+        lineColors[i * 6 + 5] = isLightTheme ? 0.75 : 0.7;
       });
 
       const lineGeo = new THREE.BufferGeometry();
@@ -978,7 +1173,7 @@ export default function Network3DGraph({
       scene.add(lines);
       edgeLineSegments.current = lines;
     }
-  }, [visibleNodes, visibleEdges, selectedNodeId, showLabels, getNodeLabel]);
+  }, [visibleNodes, visibleEdges, selectedNodeId, showLabels, getNodeLabel, isLightTheme, sceneReady]);
 
   // Update controls auto-rotate state
   useEffect(() => {
@@ -1003,7 +1198,7 @@ export default function Network3DGraph({
   };
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', background: '#070c18' }}>
+    <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden', background: isLightTheme ? '#f8fafc' : '#070c18' }}>
       {/* 3D WebGL Canvas Container */}
       <div ref={mountRef} style={{ width: '100%', height: '100%', cursor: 'grab' }} />
 
@@ -1017,12 +1212,12 @@ export default function Network3DGraph({
         alignItems: 'center',
         gap: 6,
         zIndex: 10,
-        background: 'rgba(15, 23, 42, 0.88)',
+        background: isLightTheme ? 'rgba(255, 255, 255, 0.92)' : 'rgba(15, 23, 42, 0.88)',
         backdropFilter: 'blur(12px)',
         padding: '6px',
         borderRadius: 10,
-        border: '1px solid rgba(255, 255, 255, 0.12)',
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+        border: isLightTheme ? '1px solid rgba(203, 213, 225, 0.8)' : '1px solid rgba(255, 255, 255, 0.12)',
+        boxShadow: isLightTheme ? '0 8px 32px rgba(15, 23, 42, 0.08)' : '0 8px 32px rgba(0, 0, 0, 0.4)',
       }}>
         {/* Orbit Auto-Rotate Toggle */}
         <button
@@ -1037,9 +1232,9 @@ export default function Network3DGraph({
             borderRadius: 6,
             cursor: 'pointer',
             transition: 'all 150ms ease',
-            background: autoRotate ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.05)',
-            color: autoRotate ? '#38bdf8' : '#94a3b8',
-            border: autoRotate ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
+            background: autoRotate ? 'rgba(56, 189, 248, 0.25)' : isLightTheme ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)',
+            color: autoRotate ? '#0284c7' : isLightTheme ? '#64748b' : '#94a3b8',
+            border: autoRotate ? '1px solid rgba(56, 189, 248, 0.6)' : isLightTheme ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
             boxShadow: autoRotate ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
           }}
           title={autoRotate ? 'Pause 3D Orbit' : 'Start 3D Orbit'}
@@ -1060,9 +1255,9 @@ export default function Network3DGraph({
             borderRadius: 6,
             cursor: 'pointer',
             transition: 'all 150ms ease',
-            background: showLabels ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.05)',
-            color: showLabels ? '#38bdf8' : '#94a3b8',
-            border: showLabels ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
+            background: showLabels ? 'rgba(56, 189, 248, 0.25)' : isLightTheme ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)',
+            color: showLabels ? '#0284c7' : isLightTheme ? '#64748b' : '#94a3b8',
+            border: showLabels ? '1px solid rgba(56, 189, 248, 0.6)' : isLightTheme ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
             boxShadow: showLabels ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
           }}
           title={showLabels ? 'Hide Floating Labels' : 'Show Floating Labels'}
@@ -1083,9 +1278,9 @@ export default function Network3DGraph({
             borderRadius: 6,
             cursor: 'pointer',
             transition: 'all 150ms ease',
-            background: simRunning ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.05)',
-            color: simRunning ? '#38bdf8' : '#94a3b8',
-            border: simRunning ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
+            background: simRunning ? 'rgba(56, 189, 248, 0.25)' : isLightTheme ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)',
+            color: simRunning ? '#0284c7' : isLightTheme ? '#64748b' : '#94a3b8',
+            border: simRunning ? '1px solid rgba(56, 189, 248, 0.6)' : isLightTheme ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
             boxShadow: simRunning ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
           }}
           title={simRunning ? 'Pause 3D Physics (Static)' : 'Resume 3D Physics'}
@@ -1106,9 +1301,9 @@ export default function Network3DGraph({
             borderRadius: 6,
             cursor: 'pointer',
             transition: 'all 150ms ease',
-            background: showGlobe ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.05)',
-            color: showGlobe ? '#38bdf8' : '#94a3b8',
-            border: showGlobe ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
+            background: showGlobe ? 'rgba(56, 189, 248, 0.25)' : isLightTheme ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)',
+            color: showGlobe ? '#0284c7' : isLightTheme ? '#64748b' : '#94a3b8',
+            border: showGlobe ? '1px solid rgba(56, 189, 248, 0.6)' : isLightTheme ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
             boxShadow: showGlobe ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
           }}
           title={showGlobe ? 'Disable Cyber Globe' : 'Enable Cyber Globe'}
@@ -1130,9 +1325,9 @@ export default function Network3DGraph({
               borderRadius: 6,
               cursor: 'pointer',
               transition: 'all 150ms ease',
-              background: globeRotating ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.05)',
-              color: globeRotating ? '#38bdf8' : '#94a3b8',
-              border: globeRotating ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
+              background: globeRotating ? 'rgba(56, 189, 248, 0.25)' : isLightTheme ? 'rgba(0, 0, 0, 0.04)' : 'rgba(255, 255, 255, 0.05)',
+              color: globeRotating ? '#0284c7' : isLightTheme ? '#64748b' : '#94a3b8',
+              border: globeRotating ? '1px solid rgba(56, 189, 248, 0.6)' : isLightTheme ? '1px solid rgba(203, 213, 225, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
               boxShadow: globeRotating ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
             }}
             title={globeRotating ? 'Pause Globe Auto-Rotation' : 'Start Globe Auto-Rotation'}
@@ -1141,8 +1336,31 @@ export default function Network3DGraph({
           </button>
         )}
 
+        {/* Light / Dark Theme Toggle */}
+        <button
+          onClick={() => setIsLightTheme(!isLightTheme)}
+          style={{
+            width: 30,
+            height: 30,
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 6,
+            cursor: 'pointer',
+            transition: 'all 150ms ease',
+            background: isLightTheme ? 'rgba(245, 158, 11, 0.15)' : 'rgba(255, 255, 255, 0.05)',
+            color: isLightTheme ? '#d97706' : '#f59e0b',
+            border: isLightTheme ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid rgba(255, 255, 255, 0.08)',
+            boxShadow: isLightTheme ? '0 0 10px rgba(245, 158, 11, 0.25)' : 'none',
+          }}
+          title={isLightTheme ? 'Switch to Dark Theme' : 'Switch to Light Theme'}
+        >
+          {isLightTheme ? <Moon size={14} /> : <Sun size={14} />}
+        </button>
+
         {/* Horizontal Divider */}
-        <div style={{ width: 20, height: 1, background: 'rgba(255,255,255,0.15)', margin: '2px 0' }} />
+        <div style={{ width: 20, height: 1, background: isLightTheme ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.15)', margin: '2px 0' }} />
 
         {/* Zoom Controls */}
         <button
@@ -1158,16 +1376,16 @@ export default function Network3DGraph({
             cursor: 'pointer',
             transition: 'all 150ms ease',
             background: 'transparent',
-            color: '#94a3b8',
+            color: isLightTheme ? '#64748b' : '#94a3b8',
             border: 'none',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-            e.currentTarget.style.color = '#38bdf8';
+            e.currentTarget.style.background = isLightTheme ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.08)';
+            e.currentTarget.style.color = '#0284c7';
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.color = '#94a3b8';
+            e.currentTarget.style.color = isLightTheme ? '#64748b' : '#94a3b8';
           }}
           title="Zoom In"
         >
@@ -1186,16 +1404,16 @@ export default function Network3DGraph({
             cursor: 'pointer',
             transition: 'all 150ms ease',
             background: 'transparent',
-            color: '#94a3b8',
+            color: isLightTheme ? '#64748b' : '#94a3b8',
             border: 'none',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-            e.currentTarget.style.color = '#38bdf8';
+            e.currentTarget.style.background = isLightTheme ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.08)';
+            e.currentTarget.style.color = '#0284c7';
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.color = '#94a3b8';
+            e.currentTarget.style.color = isLightTheme ? '#64748b' : '#94a3b8';
           }}
           title="Zoom Out"
         >
@@ -1214,16 +1432,16 @@ export default function Network3DGraph({
             cursor: 'pointer',
             transition: 'all 150ms ease',
             background: 'transparent',
-            color: '#94a3b8',
+            color: isLightTheme ? '#64748b' : '#94a3b8',
             border: 'none',
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-            e.currentTarget.style.color = '#38bdf8';
+            e.currentTarget.style.background = isLightTheme ? 'rgba(0, 0, 0, 0.06)' : 'rgba(255, 255, 255, 0.08)';
+            e.currentTarget.style.color = '#0284c7';
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.color = '#94a3b8';
+            e.currentTarget.style.color = isLightTheme ? '#64748b' : '#94a3b8';
           }}
           title="Reset 3D Camera"
         >
@@ -1252,35 +1470,35 @@ export default function Network3DGraph({
               display: 'flex',
               alignItems: 'center',
               gap: 6,
-              background: 'rgba(15, 23, 42, 0.88)',
+              background: isLightTheme ? 'rgba(255, 255, 255, 0.92)' : 'rgba(15, 23, 42, 0.88)',
               backdropFilter: 'blur(12px)',
-              border: `1px solid ${filterMenuOpen ? 'rgba(56, 189, 248, 0.5)' : 'rgba(255, 255, 255, 0.12)'}`,
+              border: `1px solid ${filterMenuOpen ? (isLightTheme ? '#0284c7' : 'rgba(56, 189, 248, 0.5)') : isLightTheme ? 'rgba(203, 213, 225, 0.8)' : 'rgba(255, 255, 255, 0.12)'}`,
               borderRadius: 8,
-              color: '#e2e8f0',
+              color: isLightTheme ? '#0f172a' : '#e2e8f0',
               fontSize: '0.75rem',
               fontWeight: 600,
               cursor: 'pointer',
-              boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+              boxShadow: isLightTheme ? '0 8px 32px rgba(15, 23, 42, 0.08)' : '0 8px 32px rgba(0, 0, 0, 0.4)',
               transition: 'all 150ms ease',
             }}
             title="Filter Entities by Type"
           >
-            <Filter size={13} style={{ color: '#38bdf8' }} />
+            <Filter size={13} style={{ color: isLightTheme ? '#0284c7' : '#38bdf8' }} />
             <span>Filters</span>
             <span style={{
               fontSize: '0.66rem',
               padding: '1px 6px',
               borderRadius: 10,
               background: isAllSelected
-                ? 'rgba(255,255,255,0.1)'
+                ? isLightTheme ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)'
                 : isNoneSelected
                   ? 'rgba(239, 68, 68, 0.2)'
                   : 'rgba(56, 189, 248, 0.25)',
               color: isAllSelected
-                ? '#cbd5e1'
+                ? isLightTheme ? '#475569' : '#cbd5e1'
                 : isNoneSelected
-                  ? '#f87171'
-                  : '#38bdf8',
+                  ? '#ef4444'
+                  : isLightTheme ? '#0284c7' : '#38bdf8',
               fontWeight: 700,
             }}>
               {isAllSelected ? 'ALL' : isNoneSelected ? 'NONE' : `${selectedTypes.size} active`}
@@ -1288,7 +1506,7 @@ export default function Network3DGraph({
             <ChevronDown
               size={12}
               style={{
-                color: '#94a3b8',
+                color: isLightTheme ? '#64748b' : '#94a3b8',
                 transform: filterMenuOpen ? 'rotate(180deg)' : 'none',
                 transition: 'transform 150ms ease',
               }}
@@ -1301,11 +1519,11 @@ export default function Network3DGraph({
               top: 36,
               left: 0,
               width: 220,
-              background: 'rgba(15, 23, 42, 0.96)',
+              background: isLightTheme ? 'rgba(255, 255, 255, 0.98)' : 'rgba(15, 23, 42, 0.96)',
               backdropFilter: 'blur(16px)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
+              border: isLightTheme ? '1px solid rgba(203, 213, 225, 0.9)' : '1px solid rgba(255, 255, 255, 0.15)',
               borderRadius: 10,
-              boxShadow: '0 16px 40px rgba(0, 0, 0, 0.65)',
+              boxShadow: isLightTheme ? '0 16px 40px rgba(15, 23, 42, 0.16)' : '0 16px 40px rgba(0, 0, 0, 0.65)',
               padding: '8px',
               display: 'flex',
               flexDirection: 'column',
@@ -1319,9 +1537,9 @@ export default function Network3DGraph({
                 alignItems: 'center',
                 justifyContent: 'space-between',
                 padding: '2px 6px 6px 6px',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                borderBottom: isLightTheme ? '1px solid rgba(0, 0, 0, 0.08)' : '1px solid rgba(255, 255, 255, 0.08)',
                 fontSize: '0.68rem',
-                color: '#94a3b8',
+                color: isLightTheme ? '#64748b' : '#94a3b8',
                 fontWeight: 600,
               }}>
                 <span>SELECT TYPES</span>
@@ -1332,7 +1550,7 @@ export default function Network3DGraph({
                     style={{
                       background: 'none',
                       border: 'none',
-                      color: '#38bdf8',
+                      color: isLightTheme ? '#0284c7' : '#38bdf8',
                       cursor: 'pointer',
                       fontSize: '0.68rem',
                       fontWeight: 600,
@@ -1341,14 +1559,14 @@ export default function Network3DGraph({
                   >
                     All
                   </button>
-                  <span style={{ color: 'rgba(255,255,255,0.2)' }}>|</span>
+                  <span style={{ color: isLightTheme ? 'rgba(0,0,0,0.2)' : 'rgba(255,255,255,0.2)' }}>|</span>
                   <button
                     type="button"
                     onClick={handleClearAll}
                     style={{
                       background: 'none',
                       border: 'none',
-                      color: '#94a3b8',
+                      color: isLightTheme ? '#64748b' : '#94a3b8',
                       cursor: 'pointer',
                       fontSize: '0.68rem',
                       fontWeight: 600,
@@ -1377,7 +1595,7 @@ export default function Network3DGraph({
                         justifyContent: 'space-between',
                         padding: '5px 8px',
                         borderRadius: 6,
-                        background: isChecked ? 'rgba(255, 255, 255, 0.06)' : 'transparent',
+                        background: isChecked ? (isLightTheme ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.06)') : 'transparent',
                         cursor: 'pointer',
                         transition: 'background 120ms ease',
                         userSelect: 'none',
@@ -1389,7 +1607,7 @@ export default function Network3DGraph({
                           width: 15,
                           height: 15,
                           borderRadius: 4,
-                          border: `1.5px solid ${isChecked ? col : 'rgba(255,255,255,0.3)'}`,
+                          border: `1.5px solid ${isChecked ? col : isLightTheme ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.3)'}`,
                           background: isChecked ? col : 'transparent',
                           display: 'flex',
                           alignItems: 'center',
@@ -1397,7 +1615,7 @@ export default function Network3DGraph({
                           transition: 'all 120ms ease',
                           flexShrink: 0,
                         }}>
-                          {isChecked && <Check size={11} color="#0f172a" strokeWidth={3.5} />}
+                          {isChecked && <Check size={11} color={isLightTheme ? '#ffffff' : '#0f172a'} strokeWidth={3.5} />}
                         </div>
 
                         {/* Icon and label */}
@@ -1407,7 +1625,7 @@ export default function Network3DGraph({
                         <span style={{
                           fontSize: '0.76rem',
                           fontWeight: isChecked ? 600 : 500,
-                          color: isChecked ? '#f8fafc' : '#94a3b8',
+                          color: isChecked ? (isLightTheme ? '#0f172a' : '#f8fafc') : (isLightTheme ? '#64748b' : '#94a3b8'),
                         }}>
                           {t}
                         </span>
@@ -1416,7 +1634,7 @@ export default function Network3DGraph({
                       {/* Count badge */}
                       <span style={{
                         fontSize: '0.68rem',
-                        color: 'rgba(148, 163, 184, 0.7)',
+                        color: isLightTheme ? '#94a3b8' : 'rgba(148, 163, 184, 0.7)',
                         fontWeight: 500,
                       }}>
                         {count}
@@ -1437,15 +1655,15 @@ export default function Network3DGraph({
             gap: 6,
             height: 30,
             padding: '0 8px 0 10px',
-            background: 'rgba(15, 23, 42, 0.88)',
+            background: isLightTheme ? 'rgba(255, 255, 255, 0.92)' : 'rgba(15, 23, 42, 0.88)',
             backdropFilter: 'blur(12px)',
-            border: `1px solid ${searchOpen && searchQuery ? 'rgba(56, 189, 248, 0.5)' : 'rgba(255, 255, 255, 0.12)'}`,
+            border: `1px solid ${searchOpen && searchQuery ? (isLightTheme ? '#0284c7' : 'rgba(56, 189, 248, 0.5)') : isLightTheme ? 'rgba(203, 213, 225, 0.8)' : 'rgba(255, 255, 255, 0.12)'}`,
             borderRadius: 8,
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+            boxShadow: isLightTheme ? '0 8px 32px rgba(15, 23, 42, 0.08)' : '0 8px 32px rgba(0, 0, 0, 0.4)',
             transition: 'all 150ms ease',
             width: 220,
           }}>
-            <Search size={13} style={{ color: '#38bdf8', flexShrink: 0 }} />
+            <Search size={13} style={{ color: isLightTheme ? '#0284c7' : '#38bdf8', flexShrink: 0 }} />
             <input
               type="text"
               value={searchQuery}
@@ -1460,7 +1678,7 @@ export default function Network3DGraph({
                 background: 'transparent',
                 border: 'none',
                 outline: 'none',
-                color: '#f8fafc',
+                color: isLightTheme ? '#0f172a' : '#f8fafc',
                 fontSize: '0.75rem',
                 width: '100%',
                 fontWeight: 500,
@@ -1478,7 +1696,7 @@ export default function Network3DGraph({
                   border: 'none',
                   padding: 2,
                   cursor: 'pointer',
-                  color: '#94a3b8',
+                  color: isLightTheme ? '#64748b' : '#94a3b8',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -1496,11 +1714,11 @@ export default function Network3DGraph({
               top: 36,
               left: 0,
               width: 270,
-              background: 'rgba(15, 23, 42, 0.96)',
+              background: isLightTheme ? 'rgba(255, 255, 255, 0.98)' : 'rgba(15, 23, 42, 0.96)',
               backdropFilter: 'blur(16px)',
-              border: '1px solid rgba(255, 255, 255, 0.15)',
+              border: isLightTheme ? '1px solid rgba(203, 213, 225, 0.9)' : '1px solid rgba(255, 255, 255, 0.15)',
               borderRadius: 10,
-              boxShadow: '0 16px 40px rgba(0, 0, 0, 0.65)',
+              boxShadow: isLightTheme ? '0 16px 40px rgba(15, 23, 42, 0.16)' : '0 16px 40px rgba(0, 0, 0, 0.65)',
               padding: '6px',
               display: 'flex',
               flexDirection: 'column',
@@ -1512,9 +1730,9 @@ export default function Network3DGraph({
               <div style={{
                 fontSize: '0.66rem',
                 fontWeight: 700,
-                color: '#94a3b8',
+                color: isLightTheme ? '#64748b' : '#94a3b8',
                 padding: '4px 6px',
-                borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+                borderBottom: isLightTheme ? '1px solid rgba(0, 0, 0, 0.08)' : '1px solid rgba(255, 255, 255, 0.08)',
                 letterSpacing: '0.05em',
                 textTransform: 'uppercase',
                 display: 'flex',
@@ -1528,7 +1746,7 @@ export default function Network3DGraph({
                 <div style={{
                   padding: '12px 8px',
                   fontSize: '0.74rem',
-                  color: '#64748b',
+                  color: isLightTheme ? '#94a3b8' : '#64748b',
                   textAlign: 'center',
                 }}>
                   No entities matching "{searchQuery}"
@@ -1551,7 +1769,7 @@ export default function Network3DGraph({
                         gap: 8,
                         transition: 'background 120ms ease',
                       }}
-                      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)')}
+                      onMouseEnter={(e) => (e.currentTarget.style.background = isLightTheme ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.08)')}
                       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
@@ -1572,14 +1790,14 @@ export default function Network3DGraph({
                           <span style={{
                             fontSize: '0.76rem',
                             fontWeight: 600,
-                            color: '#f8fafc',
+                            color: isLightTheme ? '#0f172a' : '#f8fafc',
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                           }}>
                             {label}
                           </span>
-                          <span style={{ fontSize: '0.64rem', color: '#94a3b8' }}>
+                          <span style={{ fontSize: '0.64rem', color: isLightTheme ? '#64748b' : '#94a3b8' }}>
                             ID: {n.id} {n.occupation ? `· ${n.occupation}` : ''}
                           </span>
                         </div>
@@ -1624,12 +1842,12 @@ export default function Network3DGraph({
             alignItems: 'center',
             height: 32,
             boxSizing: 'border-box',
-            background: 'rgba(15, 23, 42, 0.88)',
+            background: isLightTheme ? 'rgba(255, 255, 255, 0.92)' : 'rgba(15, 23, 42, 0.88)',
             backdropFilter: 'blur(12px)',
             padding: '2px',
             borderRadius: 8,
-            border: '1px solid rgba(255, 255, 255, 0.12)',
-            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+            border: isLightTheme ? '1px solid rgba(203, 213, 225, 0.8)' : '1px solid rgba(255, 255, 255, 0.12)',
+            boxShadow: isLightTheme ? '0 8px 32px rgba(15, 23, 42, 0.08)' : '0 8px 32px rgba(0, 0, 0, 0.4)',
             gap: 2,
           }}>
             <button
@@ -1647,22 +1865,22 @@ export default function Network3DGraph({
                 cursor: 'pointer',
                 transition: 'all 150ms ease',
                 background: 'transparent',
-                color: '#94a3b8',
+                color: isLightTheme ? '#64748b' : '#94a3b8',
                 border: 'none',
                 fontSize: '0.74rem',
                 fontWeight: 500,
                 whiteSpace: 'nowrap',
               }}
               onMouseEnter={(e) => {
-                e.currentTarget.style.color = '#f8fafc';
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+                e.currentTarget.style.color = isLightTheme ? '#0f172a' : '#f8fafc';
+                e.currentTarget.style.background = isLightTheme ? 'rgba(0, 0, 0, 0.05)' : 'rgba(255, 255, 255, 0.08)';
               }}
               onMouseLeave={(e) => {
-                e.currentTarget.style.color = '#94a3b8';
+                e.currentTarget.style.color = isLightTheme ? '#64748b' : '#94a3b8';
                 e.currentTarget.style.background = 'transparent';
               }}
             >
-              <Network size={13} style={{ color: '#94a3b8' }} />
+              <Network size={13} style={{ color: isLightTheme ? '#64748b' : '#94a3b8' }} />
               <span>2D</span>
             </button>
 
@@ -1680,7 +1898,7 @@ export default function Network3DGraph({
                 cursor: 'default',
                 transition: 'all 150ms ease',
                 background: 'rgba(56, 189, 248, 0.22)',
-                color: '#38bdf8',
+                color: isLightTheme ? '#0284c7' : '#38bdf8',
                 border: '1px solid rgba(56, 189, 248, 0.45)',
                 boxShadow: '0 0 10px rgba(56, 189, 248, 0.25)',
                 fontSize: '0.74rem',
@@ -1688,7 +1906,7 @@ export default function Network3DGraph({
                 whiteSpace: 'nowrap',
               }}
             >
-              <Box size={13} style={{ color: '#38bdf8' }} />
+              <Box size={13} style={{ color: isLightTheme ? '#0284c7' : '#38bdf8' }} />
               <span>3D</span>
             </button>
           </div>
@@ -1711,27 +1929,27 @@ export default function Network3DGraph({
               borderRadius: 8,
               cursor: 'pointer',
               transition: 'all 150ms ease',
-              background: isFullscreen ? 'rgba(56, 189, 248, 0.25)' : 'rgba(15, 23, 42, 0.88)',
+              background: isFullscreen ? 'rgba(56, 189, 248, 0.25)' : isLightTheme ? 'rgba(255, 255, 255, 0.92)' : 'rgba(15, 23, 42, 0.88)',
               backdropFilter: 'blur(12px)',
-              color: isFullscreen ? '#38bdf8' : '#e2e8f0',
-              border: isFullscreen ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.12)',
+              color: isFullscreen ? (isLightTheme ? '#0284c7' : '#38bdf8') : isLightTheme ? '#334155' : '#e2e8f0',
+              border: isFullscreen ? '1px solid rgba(56, 189, 248, 0.6)' : isLightTheme ? '1px solid rgba(203, 213, 225, 0.8)' : '1px solid rgba(255, 255, 255, 0.12)',
               boxShadow: isFullscreen
                 ? '0 0 12px rgba(56, 189, 248, 0.35), 0 8px 32px rgba(0, 0, 0, 0.4)'
-                : '0 8px 32px rgba(0, 0, 0, 0.4)',
+                : isLightTheme ? '0 8px 32px rgba(15, 23, 42, 0.08)' : '0 8px 32px rgba(0, 0, 0, 0.4)',
               flexShrink: 0,
             }}
             onMouseEnter={(e) => {
               if (!isFullscreen) {
-                e.currentTarget.style.background = 'rgba(30, 41, 59, 0.95)';
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.25)';
-                e.currentTarget.style.color = '#ffffff';
+                e.currentTarget.style.background = isLightTheme ? 'rgba(241, 245, 249, 0.95)' : 'rgba(30, 41, 59, 0.95)';
+                e.currentTarget.style.borderColor = isLightTheme ? 'rgba(148, 163, 184, 0.5)' : 'rgba(255, 255, 255, 0.25)';
+                e.currentTarget.style.color = isLightTheme ? '#0f172a' : '#ffffff';
               }
             }}
             onMouseLeave={(e) => {
               if (!isFullscreen) {
-                e.currentTarget.style.background = 'rgba(15, 23, 42, 0.88)';
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
-                e.currentTarget.style.color = '#e2e8f0';
+                e.currentTarget.style.background = isLightTheme ? 'rgba(255, 255, 255, 0.92)' : 'rgba(15, 23, 42, 0.88)';
+                e.currentTarget.style.borderColor = isLightTheme ? '1px solid rgba(203, 213, 225, 0.8)' : '1px solid rgba(255, 255, 255, 0.12)';
+                e.currentTarget.style.color = isLightTheme ? '#334155' : '#e2e8f0';
               }
             }}
           >
@@ -1747,13 +1965,13 @@ export default function Network3DGraph({
           bottom: 20,
           left: 20,
           zIndex: 10,
-          background: 'rgba(15, 23, 42, 0.95)',
+          background: isLightTheme ? 'rgba(255, 255, 255, 0.97)' : 'rgba(15, 23, 42, 0.95)',
           backdropFilter: 'blur(16px)',
           border: `1px solid ${TYPE_COLORS[hoveredNode.nodeType] || '#38bdf8'}80`,
           borderRadius: 10,
           padding: '12px 16px',
-          color: '#f8fafc',
-          boxShadow: '0 12px 32px rgba(0,0,0,0.6)',
+          color: isLightTheme ? '#0f172a' : '#f8fafc',
+          boxShadow: isLightTheme ? '0 12px 32px rgba(15, 23, 42, 0.14)' : '0 12px 32px rgba(0,0,0,0.6)',
           pointerEvents: 'none',
           maxWidth: 320,
         }}>
@@ -1772,7 +1990,7 @@ export default function Network3DGraph({
               {renderEntityIcon(hoveredNode.nodeType, 18, TYPE_COLORS[hoveredNode.nodeType] || '#38bdf8')}
             </div>
             <div>
-              <div style={{ fontSize: '0.95rem', fontWeight: 700, color: '#fff' }}>
+              <div style={{ fontSize: '0.95rem', fontWeight: 700, color: isLightTheme ? '#0f172a' : '#fff' }}>
                 {getNodeLabel(hoveredNode)}
               </div>
               <span style={{
@@ -1787,7 +2005,7 @@ export default function Network3DGraph({
             </div>
           </div>
           {hoveredNode.occupation && (
-            <div style={{ fontSize: '0.74rem', color: '#cbd5e1', marginTop: 4 }}>
+            <div style={{ fontSize: '0.74rem', color: isLightTheme ? '#475569' : '#cbd5e1', marginTop: 4 }}>
               Occupation: <strong>{hoveredNode.occupation}</strong>
             </div>
           )}
@@ -1796,7 +2014,7 @@ export default function Network3DGraph({
               Risk Assessment: {(Number(hoveredNode.risk_score) * 100).toFixed(0)}%
             </div>
           )}
-          <div style={{ fontSize: '0.68rem', color: '#94a3b8', marginTop: 6, fontStyle: 'italic' }}>
+          <div style={{ fontSize: '0.68rem', color: isLightTheme ? '#64748b' : '#94a3b8', marginTop: 6, fontStyle: 'italic' }}>
             Click node to lock camera & inspect full dossier
           </div>
         </div>
@@ -1808,19 +2026,20 @@ export default function Network3DGraph({
         bottom: 16,
         left: 16,
         zIndex: 10,
-        background: 'rgba(15, 23, 42, 0.75)',
+        background: isLightTheme ? 'rgba(255, 255, 255, 0.88)' : 'rgba(15, 23, 42, 0.75)',
         backdropFilter: 'blur(10px)',
-        border: '1px solid rgba(255,255,255,0.08)',
+        border: isLightTheme ? '1px solid rgba(203, 213, 225, 0.8)' : '1px solid rgba(255,255,255,0.08)',
         borderRadius: 8,
         padding: '8px 12px',
         fontSize: '0.7rem',
-        color: '#94a3b8',
+        color: isLightTheme ? '#475569' : '#94a3b8',
         display: 'flex',
         flexDirection: 'column',
         gap: 3,
         pointerEvents: 'none',
+        boxShadow: isLightTheme ? '0 4px 20px rgba(0, 0, 0, 0.06)' : 'none',
       }}>
-        <div style={{ fontWeight: 700, color: '#e2e8f0', marginBottom: 2 }}>3D Navigation Guide:</div>
+        <div style={{ fontWeight: 700, color: isLightTheme ? '#0f172a' : '#e2e8f0', marginBottom: 2 }}>3D Navigation Guide:</div>
         <div>• <strong>Left Click + Drag:</strong> 360° Space Orbit</div>
         <div>• <strong>Right Click + Drag:</strong> Pan / Translate</div>
         <div>• <strong>Scroll Wheel:</strong> Zoom In / Out</div>

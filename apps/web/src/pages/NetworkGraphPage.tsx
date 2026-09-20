@@ -1149,14 +1149,6 @@ export default function NetworkGraphPage() {
       overflow: 'hidden',
     }}>
 
-      {investigationCase && (
-        <div className="ai-disclaimer" style={{ margin: '8px 12px 0 12px', flexShrink: 0 }}>Focused investigation graph: <strong>{investigationCase}</strong>. Expand nodes to inspect related people, accounts, locations, and communications.</div>
-      )}
-      {entityIdParam && (
-        <div className="ai-disclaimer" style={{ margin: '8px 12px 0 12px', flexShrink: 0 }}>
-          Focused entity graph: <strong>{entityTypeParam} · {entityIdParam}</strong>. Exploring connections, direct relationships, and link predictions.
-        </div>
-      )}
 
       {/* Path finder bar */}
       {pathMode && viewDimension === '2d' && (
@@ -1982,6 +1974,7 @@ export default function NetworkGraphPage() {
           {viewDimension === '3d' && (
             <div style={{ position: 'absolute', inset: 0, zIndex: 2 }}>
               <Network3DGraph
+                key="3d-network-space-v3"
                 nodes={allNodes as Graph3DNode[]}
                 edges={allEdges as Graph3DEdge[]}
                 selectedNodeId={selectedNode?.id}
@@ -2008,6 +2001,16 @@ export default function NetworkGraphPage() {
               }}>
                 <strong style={{ color: '#38bdf8' }}>{nodeCount}</strong> nodes · <strong style={{ color: '#38bdf8' }}>{edgeCount}</strong> edges
               </div>
+              {investigationCase && (
+                <div style={{
+                  padding: '5px 12px', background: 'rgba(37, 99, 235, 0.25)',
+                  backdropFilter: 'blur(8px)', border: '1px solid rgba(59, 130, 246, 0.45)',
+                  borderRadius: 8, fontSize: '0.74rem', color: '#93c5fd',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                }}>
+                  Case: <strong>{investigationCase}</strong>
+                </div>
+              )}
               <div className="ai-disclaimer" style={{ padding: '5px 12px', fontSize: '0.72rem' }}>
                 Analytical relationships — not proof of wrongdoing
               </div>
