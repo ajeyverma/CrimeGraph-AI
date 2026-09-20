@@ -264,6 +264,18 @@ pre {
   padding: var(--spacing-lg);
 }
 
+.page-content.page-content-flush {
+  padding: 0 !important;
+  overflow: hidden !important;
+}
+
+.page-content.page-content-flush .graph-container {
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  margin: 0 !important;
+}
+
 /* ============================================
    Fixed Bottom Horizontal Scrollbar & Table Dock
    ============================================ */

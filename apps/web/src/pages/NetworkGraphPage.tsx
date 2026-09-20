@@ -392,7 +392,17 @@ export default function NetworkGraphPage() {
     };
   }, [isFullscreen]);
 
-  // When fullscreen changes, trigger cytoscape resize and fit
+  // When fullscreen changes or window resizes, trigger cytoscape resize
+  useEffect(() => {
+    const handleWindowResize = () => {
+      if (cyInstance.current) {
+        cyInstance.current.resize();
+      }
+    };
+    window.addEventListener('resize', handleWindowResize);
+    return () => window.removeEventListener('resize', handleWindowResize);
+  }, []);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       if (cyInstance.current) {
@@ -1128,13 +1138,22 @@ export default function NetworkGraphPage() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - var(--topbar-height) - 48px)', gap: 12 }}>
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      height: '100%',
+      width: '100%',
+      margin: 0,
+      padding: 0,
+      gap: 0,
+      overflow: 'hidden',
+    }}>
 
       {investigationCase && (
-        <div className="ai-disclaimer">Focused investigation graph: <strong>{investigationCase}</strong>. Expand nodes to inspect related people, accounts, locations, and communications.</div>
+        <div className="ai-disclaimer" style={{ margin: '8px 12px 0 12px', flexShrink: 0 }}>Focused investigation graph: <strong>{investigationCase}</strong>. Expand nodes to inspect related people, accounts, locations, and communications.</div>
       )}
       {entityIdParam && (
-        <div className="ai-disclaimer">
+        <div className="ai-disclaimer" style={{ margin: '8px 12px 0 12px', flexShrink: 0 }}>
           Focused entity graph: <strong>{entityTypeParam} · {entityIdParam}</strong>. Exploring connections, direct relationships, and link predictions.
         </div>
       )}
@@ -1145,6 +1164,7 @@ export default function NetworkGraphPage() {
           padding: '10px 14px', background: 'rgba(59,130,246,0.08)',
           border: '1px solid rgba(59,130,246,0.2)', borderRadius: 10,
           display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+          margin: '8px 12px 0 12px', flexShrink: 0,
         }}>
           <GitBranch size={14} color="var(--accent-primary)" />
           <span style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
@@ -1175,8 +1195,15 @@ export default function NetworkGraphPage() {
         style={{
           flex: 1,
           display: 'flex',
-          gap: isFullscreen ? 0 : 12,
+          gap: 0,
           minHeight: 0,
+          height: '100%',
+          width: '100%',
+          margin: 0,
+          padding: 0,
+          border: 'none',
+          borderRadius: 0,
+          overflow: 'hidden',
           ...(isFullscreen ? {
             position: 'fixed',
             top: 0,
@@ -1202,13 +1229,13 @@ export default function NetworkGraphPage() {
             flex: 1,
             position: 'relative',
             overflow: 'hidden',
-            ...(isFullscreen ? {
-              border: 'none',
-              borderRadius: 0,
-              boxShadow: 'none',
-              margin: 0,
-              padding: 0,
-            } : {})
+            border: 'none',
+            borderRadius: 0,
+            boxShadow: 'none',
+            margin: 0,
+            padding: 0,
+            width: '100%',
+            height: '100%',
           }}
         >
           {/* 2D Controls (Vertical Menu, Filters, Search & Top-Right Switch) */}
@@ -1993,17 +2020,22 @@ export default function NetworkGraphPage() {
         {/* Right panel — entity details */}
         {(selectedNode || selectedEdge) && (
           <div className="slide-in-right" style={{
-            width: 340, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 12,
-            overflowY: 'auto', maxHeight: '100%',
-            ...(isFullscreen ? {
-              background: 'rgba(15, 23, 42, 0.95)',
-              backdropFilter: 'blur(16px)',
-              borderLeft: '1px solid rgba(255, 255, 255, 0.12)',
-              borderRadius: 0,
-              margin: 0,
-              padding: 16,
-              zIndex: 30,
-            } : {})
+            width: 350,
+            flexShrink: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+            overflowY: 'auto',
+            maxHeight: '100%',
+            height: '100%',
+            background: viewDimension === '3d' ? 'rgba(15, 23, 42, 0.96)' : '#ffffff',
+            backdropFilter: 'blur(16px)',
+            borderLeft: viewDimension === '3d' ? '1px solid rgba(255, 255, 255, 0.12)' : '1px solid var(--border-primary, #cbd5e1)',
+            boxShadow: '-4px 0 20px rgba(0, 0, 0, 0.08)',
+            borderRadius: 0,
+            margin: 0,
+            padding: 16,
+            zIndex: 30,
           }}>
             {selectedNode && (
               <div className="card" style={{ flex: 'none' }}>

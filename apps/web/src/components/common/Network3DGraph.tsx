@@ -5,7 +5,7 @@ import { ViewHelper } from 'three/examples/jsm/helpers/ViewHelper.js';
 import {
   RotateCw, ZoomIn, ZoomOut, Maximize2, Minimize2, Play, Pause,
   Layers, Eye, EyeOff, RefreshCw, Sparkles, Filter, Check, ChevronDown,
-  Search, X,
+  Search, X, Globe, RotateCcw,
   User, Phone as PhoneIcon, Car, Building2, MapPin, CreditCard, Briefcase, Package, Calendar, Circle,
   Network, Box
 } from 'lucide-react';
@@ -89,6 +89,22 @@ export default function Network3DGraph({
   const [hoveredNode, setHoveredNode] = useState<Graph3DNode | null>(null);
   const [simRunning, setSimRunning] = useState(false);
   const [sceneReady, setSceneReady] = useState(false);
+  const [showGlobe, setShowGlobe] = useState(true);
+  const [globeRotating, setGlobeRotating] = useState(true);
+  const cyberGlobeRef = useRef<THREE.Group | null>(null);
+  const showGlobeRef = useRef(true);
+  const globeRotatingRef = useRef(true);
+
+  useEffect(() => {
+    showGlobeRef.current = showGlobe;
+    if (cyberGlobeRef.current) {
+      cyberGlobeRef.current.visible = showGlobe;
+    }
+  }, [showGlobe]);
+
+  useEffect(() => {
+    globeRotatingRef.current = globeRotating;
+  }, [globeRotating]);
 
   // Distinct entity types present in the dataset
   const availableTypes = useMemo(() => {
@@ -424,6 +440,8 @@ export default function Network3DGraph({
 
     // 6b. Central Holographic Cyber Globe
     const cyberGlobeGroup = new THREE.Group();
+    cyberGlobeRef.current = cyberGlobeGroup;
+    cyberGlobeGroup.visible = showGlobeRef.current;
     const globeRadius = Math.max(120, Math.cbrt(visibleNodes.length || 1) * 58);
 
     const globeGeo = new THREE.SphereGeometry(globeRadius, 24, 16);
@@ -786,7 +804,9 @@ export default function Network3DGraph({
         halo.scale.set(scale, scale, scale);
       });
 
-      cyberGlobeGroup.rotation.y += 0.0006;
+      if (showGlobeRef.current && globeRotatingRef.current) {
+        cyberGlobeGroup.rotation.y += 0.0008;
+      }
 
       viewHelper.center.copy(controls.target);
       if (viewHelper.animating) {
@@ -1073,6 +1093,54 @@ export default function Network3DGraph({
           <Sparkles size={14} />
         </button>
 
+        {/* Globe Enable / Disable */}
+        <button
+          onClick={() => setShowGlobe(!showGlobe)}
+          style={{
+            width: 30,
+            height: 30,
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 6,
+            cursor: 'pointer',
+            transition: 'all 150ms ease',
+            background: showGlobe ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+            color: showGlobe ? '#38bdf8' : '#94a3b8',
+            border: showGlobe ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
+            boxShadow: showGlobe ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
+          }}
+          title={showGlobe ? 'Disable Cyber Globe' : 'Enable Cyber Globe'}
+        >
+          <Globe size={14} />
+        </button>
+
+        {/* Globe Auto-Rotation Toggle (available when globe is enabled) */}
+        {showGlobe && (
+          <button
+            onClick={() => setGlobeRotating(!globeRotating)}
+            style={{
+              width: 30,
+              height: 30,
+              padding: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 6,
+              cursor: 'pointer',
+              transition: 'all 150ms ease',
+              background: globeRotating ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+              color: globeRotating ? '#38bdf8' : '#94a3b8',
+              border: globeRotating ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
+              boxShadow: globeRotating ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
+            }}
+            title={globeRotating ? 'Pause Globe Auto-Rotation' : 'Start Globe Auto-Rotation'}
+          >
+            <RotateCcw size={14} style={{ transform: globeRotating ? 'rotate(-45deg)' : 'none', transition: 'transform 200ms ease' }} />
+          </button>
+        )}
+
         {/* Horizontal Divider */}
         <div style={{ width: 20, height: 1, background: 'rgba(255,255,255,0.15)', margin: '2px 0' }} />
 
@@ -1089,9 +1157,17 @@ export default function Network3DGraph({
             borderRadius: 6,
             cursor: 'pointer',
             transition: 'all 150ms ease',
-            background: 'rgba(255, 255, 255, 0.05)',
+            background: 'transparent',
             color: '#94a3b8',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
+            border: 'none',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+            e.currentTarget.style.color = '#38bdf8';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.color = '#94a3b8';
           }}
           title="Zoom In"
         >
@@ -1109,9 +1185,17 @@ export default function Network3DGraph({
             borderRadius: 6,
             cursor: 'pointer',
             transition: 'all 150ms ease',
-            background: 'rgba(255, 255, 255, 0.05)',
+            background: 'transparent',
             color: '#94a3b8',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
+            border: 'none',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+            e.currentTarget.style.color = '#38bdf8';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.color = '#94a3b8';
           }}
           title="Zoom Out"
         >
@@ -1129,9 +1213,17 @@ export default function Network3DGraph({
             borderRadius: 6,
             cursor: 'pointer',
             transition: 'all 150ms ease',
-            background: 'rgba(255, 255, 255, 0.05)',
+            background: 'transparent',
             color: '#94a3b8',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
+            border: 'none',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+            e.currentTarget.style.color = '#38bdf8';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = 'transparent';
+            e.currentTarget.style.color = '#94a3b8';
           }}
           title="Reset 3D Camera"
         >
