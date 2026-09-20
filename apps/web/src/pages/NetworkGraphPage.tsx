@@ -1333,6 +1333,8 @@ export default function NetworkGraphPage() {
                 onSelectNode={node => setSelectedNode(node as GraphNode | null)}
                 onSelectEdge={edge => setSelectedEdge(edge as GraphEdge | null)}
                 isFullscreen={isFullscreen}
+                onToggleFullscreen={toggleFullscreen}
+                onSwitchTo2D={() => setViewDimension('2d')}
               />
             </div>
           )}

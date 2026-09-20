@@ -40,6 +40,7 @@ interface Network3DGraphProps {
   onSelectEdge?: (edge: Graph3DEdge | null) => void;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  onSwitchTo2D?: () => void;
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -73,6 +74,7 @@ export default function Network3DGraph({
   onSelectNode,
   isFullscreen,
   onToggleFullscreen,
+  onSwitchTo2D,
 }: Network3DGraphProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const [autoRotate, setAutoRotate] = useState(false);
@@ -829,18 +831,19 @@ export default function Network3DGraph({
       {/* 3D WebGL Canvas Container */}
       <div ref={mountRef} style={{ width: '100%', height: '100%', cursor: 'grab' }} />
 
-      {/* Floating 3D Control Bar */}
+      {/* Floating 3D Control Bar (Vertical Icon-Only Toolbar) */}
       <div style={{
         position: 'absolute',
         top: 14,
         left: 16,
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
-        gap: 8,
+        gap: 6,
         zIndex: 10,
-        background: 'rgba(15, 23, 42, 0.85)',
+        background: 'rgba(15, 23, 42, 0.88)',
         backdropFilter: 'blur(12px)',
-        padding: '6px 10px',
+        padding: '6px',
         borderRadius: 10,
         border: '1px solid rgba(255, 255, 255, 0.12)',
         boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
@@ -848,66 +851,143 @@ export default function Network3DGraph({
         {/* Orbit Auto-Rotate Toggle */}
         <button
           onClick={() => setAutoRotate(!autoRotate)}
-          className={`btn btn-sm ${autoRotate ? 'btn-primary' : 'btn-ghost'}`}
-          style={{ padding: '5px 10px', fontSize: '0.75rem', gap: 5, color: '#fff' }}
+          style={{
+            width: 30,
+            height: 30,
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 6,
+            cursor: 'pointer',
+            transition: 'all 150ms ease',
+            background: autoRotate ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+            color: autoRotate ? '#38bdf8' : '#94a3b8',
+            border: autoRotate ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
+            boxShadow: autoRotate ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
+          }}
           title={autoRotate ? 'Pause 3D Orbit' : 'Start 3D Orbit'}
         >
-          {autoRotate ? <Pause size={13} /> : <Play size={13} />}
-          <span>{autoRotate ? 'Orbiting' : 'Orbit'}</span>
+          {autoRotate ? <Pause size={14} /> : <Play size={14} />}
         </button>
 
         {/* Labels Toggle */}
         <button
           onClick={() => setShowLabels(!showLabels)}
-          className={`btn btn-sm ${showLabels ? 'btn-secondary' : 'btn-ghost'}`}
-          style={{ padding: '5px 9px', fontSize: '0.75rem', gap: 5, color: '#fff' }}
-          title="Toggle 3D Floating Labels"
+          style={{
+            width: 30,
+            height: 30,
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 6,
+            cursor: 'pointer',
+            transition: 'all 150ms ease',
+            background: showLabels ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+            color: showLabels ? '#38bdf8' : '#94a3b8',
+            border: showLabels ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
+            boxShadow: showLabels ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
+          }}
+          title={showLabels ? 'Hide Floating Labels' : 'Show Floating Labels'}
         >
-          {showLabels ? <Eye size={13} /> : <EyeOff size={13} />}
-          <span>Labels</span>
+          {showLabels ? <Eye size={14} /> : <EyeOff size={14} />}
         </button>
 
         {/* Physics toggle */}
         <button
           onClick={() => setSimRunning(!simRunning)}
-          className={`btn btn-sm ${simRunning ? 'btn-secondary' : 'btn-ghost'}`}
-          style={{ padding: '5px 9px', fontSize: '0.75rem', gap: 5, color: '#fff' }}
-          title="Pause/Resume 3D Physics Simulation"
+          style={{
+            width: 30,
+            height: 30,
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 6,
+            cursor: 'pointer',
+            transition: 'all 150ms ease',
+            background: simRunning ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+            color: simRunning ? '#38bdf8' : '#94a3b8',
+            border: simRunning ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
+            boxShadow: simRunning ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
+          }}
+          title={simRunning ? 'Pause 3D Physics (Static)' : 'Resume 3D Physics'}
         >
-          <Sparkles size={13} />
-          <span>{simRunning ? 'Physics' : 'Static'}</span>
+          <Sparkles size={14} />
         </button>
 
-        <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.15)', margin: '0 2px' }} />
+        {/* Horizontal Divider */}
+        <div style={{ width: 20, height: 1, background: 'rgba(255,255,255,0.15)', margin: '2px 0' }} />
 
         {/* Zoom Controls */}
-        <button onClick={() => handleZoom(0.85)} className="btn btn-ghost btn-sm" style={{ padding: 5, color: '#fff' }} title="Zoom In">
+        <button
+          onClick={() => handleZoom(0.85)}
+          style={{
+            width: 30,
+            height: 30,
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 6,
+            cursor: 'pointer',
+            transition: 'all 150ms ease',
+            background: 'rgba(255, 255, 255, 0.05)',
+            color: '#94a3b8',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+          }}
+          title="Zoom In"
+        >
           <ZoomIn size={14} />
         </button>
-        <button onClick={() => handleZoom(1.15)} className="btn btn-ghost btn-sm" style={{ padding: 5, color: '#fff' }} title="Zoom Out">
+        <button
+          onClick={() => handleZoom(1.15)}
+          style={{
+            width: 30,
+            height: 30,
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 6,
+            cursor: 'pointer',
+            transition: 'all 150ms ease',
+            background: 'rgba(255, 255, 255, 0.05)',
+            color: '#94a3b8',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+          }}
+          title="Zoom Out"
+        >
           <ZoomOut size={14} />
         </button>
-        <button onClick={handleResetCamera} className="btn btn-ghost btn-sm" style={{ padding: 5, color: '#fff' }} title="Reset 3D Camera">
+        <button
+          onClick={handleResetCamera}
+          style={{
+            width: 30,
+            height: 30,
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 6,
+            cursor: 'pointer',
+            transition: 'all 150ms ease',
+            background: 'rgba(255, 255, 255, 0.05)',
+            color: '#94a3b8',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+          }}
+          title="Reset 3D Camera"
+        >
           <RotateCw size={14} />
         </button>
-
-        {onToggleFullscreen && (
-          <button
-            onClick={onToggleFullscreen}
-            className={`btn btn-sm ${isFullscreen ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ width: 28, height: 28, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}
-            title={isFullscreen ? 'Exit Fullscreen (Esc / F11)' : 'Full Screen (F11)'}
-          >
-            {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-          </button>
-        )}
       </div>
 
       {/* Schema Filter Badges Bar */}
       <div style={{
         position: 'absolute',
         top: 14,
-        right: 16,
+        left: 62,
         display: 'flex',
         alignItems: 'center',
         gap: 6,
@@ -918,7 +998,7 @@ export default function Network3DGraph({
         borderRadius: 10,
         border: '1px solid rgba(255, 255, 255, 0.12)',
         boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
-        maxWidth: '55%',
+        maxWidth: 'calc(100% - 340px)',
         overflowX: 'auto',
       }}>
         <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 600, paddingRight: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -952,6 +1032,71 @@ export default function Network3DGraph({
             </button>
           );
         })}
+      </div>
+
+      {/* Right Top Corner: Switch to 2D & Fullscreen Buttons */}
+      <div style={{
+        position: 'absolute',
+        top: 14,
+        right: 16,
+        zIndex: 20,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+      }}>
+        {onSwitchTo2D && (
+          <button
+            type="button"
+            onClick={onSwitchTo2D}
+            title="Switch to 2D Graph View"
+            style={{
+              height: 34,
+              padding: '0 12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: '#ffffff',
+              color: '#0f172a',
+              border: '1px solid #cbd5e1',
+              borderRadius: 8,
+              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.25)',
+              cursor: 'pointer',
+              fontSize: '0.78rem',
+              fontWeight: 600,
+              transition: 'all 0.15s ease',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <Layers size={14} style={{ color: '#0284c7' }} />
+            <span>Switch to 2D</span>
+          </button>
+        )}
+
+        {onToggleFullscreen && (
+          <button
+            type="button"
+            onClick={onToggleFullscreen}
+            title={isFullscreen ? 'Exit Fullscreen (Esc / F11)' : 'Full Screen (F11)'}
+            style={{
+              width: 34,
+              height: 34,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: '#ffffff',
+              color: '#0f172a',
+              border: '1px solid #cbd5e1',
+              borderRadius: 8,
+              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.25)',
+              cursor: 'pointer',
+              padding: 0,
+              flexShrink: 0,
+              transition: 'all 0.15s ease',
+            }}
+          >
+            {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
+        )}
       </div>
 
       {/* Hover Info Tooltip HUD */}
