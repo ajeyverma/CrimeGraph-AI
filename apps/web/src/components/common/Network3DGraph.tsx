@@ -7,7 +7,7 @@ import {
   Layers, Eye, EyeOff, RefreshCw, Sparkles, Filter, Check, ChevronDown,
   Search, X, Globe, RotateCcw, Sun, Moon,
   User, Phone as PhoneIcon, Car, Building2, MapPin, CreditCard, Briefcase, Package, Calendar, Circle,
-  Network, Box
+  Network, Box, Info
 } from 'lucide-react';
 
 export interface Graph3DNode {
@@ -122,6 +122,7 @@ export default function Network3DGraph({
   const [simRunning, setSimRunning] = useState(false);
   const simRunningRef = useRef(false);
   const [sceneReady, setSceneReady] = useState(false);
+  const [showNavGuide, setShowNavGuide] = useState(false);
 
   useEffect(() => {
     simRunningRef.current = simRunning;
@@ -447,9 +448,9 @@ export default function Network3DGraph({
     scene.background = new THREE.Color(initialBg);
     scene.fog = new THREE.FogExp2(initialBg, isLightThemeRef.current ? 0.0008 : 0.0012);
 
-    // 2. Camera
+    // 2. Camera (Balanced default framing so cyber globe and all nodes fit beautifully)
     const camera = new THREE.PerspectiveCamera(50, width / height, 1, 4000);
-    camera.position.set(0, 80, 420);
+    camera.position.set(0, 95, 520);
     cameraRef.current = camera;
 
     // 3. WebGL Renderer
@@ -654,7 +655,7 @@ export default function Network3DGraph({
 
     // Smooth transition to Isometric perspective
     const animateToIsometric = () => {
-      const currentDist = camera.position.distanceTo(controls.target) || 420;
+      const currentDist = camera.position.distanceTo(controls.target) || 520;
       const isoDir = new THREE.Vector3(1, 0.75, 1).normalize();
       const targetPos = controls.target.clone().add(isoDir.multiplyScalar(currentDist));
 
@@ -1182,10 +1183,10 @@ export default function Network3DGraph({
     }
   }, [autoRotate]);
 
-  // Camera reset
+  // Camera reset (Balanced default view framing)
   const handleResetCamera = () => {
     if (cameraRef.current && controlsRef.current) {
-      cameraRef.current.position.set(0, 80, 420);
+      cameraRef.current.position.set(0, 95, 520);
       controlsRef.current.target.set(0, 0, 0);
       controlsRef.current.update();
     }
@@ -1912,6 +1913,109 @@ export default function Network3DGraph({
           </div>
         )}
 
+        {/* Standalone About / 3D Navigation Guide Button */}
+        <div
+          style={{ position: 'relative' }}
+          onMouseEnter={() => setShowNavGuide(true)}
+          onMouseLeave={() => setShowNavGuide(false)}
+        >
+          <button
+            type="button"
+            title="About 3D Navigation Guide"
+            style={{
+              width: 32,
+              height: 32,
+              boxSizing: 'border-box',
+              padding: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: 8,
+              cursor: 'pointer',
+              transition: 'all 150ms ease',
+              background: showNavGuide
+                ? isLightTheme ? 'rgba(241, 245, 249, 0.98)' : 'rgba(56, 189, 248, 0.25)'
+                : isLightTheme ? 'rgba(255, 255, 255, 0.92)' : 'rgba(15, 23, 42, 0.88)',
+              backdropFilter: 'blur(12px)',
+              color: showNavGuide
+                ? (isLightTheme ? '#0284c7' : '#38bdf8')
+                : isLightTheme ? '#334155' : '#cbd5e1',
+              border: showNavGuide
+                ? '1px solid rgba(56, 189, 248, 0.6)'
+                : isLightTheme ? '1px solid rgba(203, 213, 225, 0.8)' : '1px solid rgba(255, 255, 255, 0.12)',
+              boxShadow: showNavGuide
+                ? '0 0 12px rgba(56, 189, 248, 0.35)'
+                : isLightTheme ? '0 8px 32px rgba(15, 23, 42, 0.08)' : '0 8px 32px rgba(0, 0, 0, 0.4)',
+              flexShrink: 0,
+            }}
+            onMouseEnter={(e) => {
+              if (!showNavGuide) {
+                e.currentTarget.style.background = isLightTheme ? 'rgba(241, 245, 249, 0.95)' : 'rgba(30, 41, 59, 0.95)';
+                e.currentTarget.style.borderColor = isLightTheme ? 'rgba(148, 163, 184, 0.5)' : 'rgba(255, 255, 255, 0.25)';
+                e.currentTarget.style.color = isLightTheme ? '#0284c7' : '#38bdf8';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!showNavGuide) {
+                e.currentTarget.style.background = isLightTheme ? 'rgba(255, 255, 255, 0.92)' : 'rgba(15, 23, 42, 0.88)';
+                e.currentTarget.style.borderColor = isLightTheme ? '1px solid rgba(203, 213, 225, 0.8)' : '1px solid rgba(255, 255, 255, 0.12)';
+                e.currentTarget.style.color = isLightTheme ? '#334155' : '#cbd5e1';
+              }
+            }}
+          >
+            <Info size={15} />
+          </button>
+
+          {/* 3D Navigation Guide Popover on Hover (Top-Right) */}
+          {showNavGuide && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 'calc(100% + 8px)',
+                right: 0,
+                width: 255,
+                background: isLightTheme ? 'rgba(255, 255, 255, 0.98)' : 'rgba(15, 23, 42, 0.96)',
+                backdropFilter: 'blur(16px)',
+                border: isLightTheme ? '1px solid rgba(203, 213, 225, 0.9)' : '1px solid rgba(56, 189, 248, 0.4)',
+                borderRadius: 10,
+                padding: '12px 14px',
+                boxShadow: isLightTheme
+                  ? '0 12px 32px rgba(15, 23, 42, 0.15)'
+                  : '0 12px 32px rgba(0, 0, 0, 0.7), 0 0 15px rgba(56, 189, 248, 0.15)',
+                fontSize: '0.72rem',
+                color: isLightTheme ? '#334155' : '#cbd5e1',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 5,
+                pointerEvents: 'none',
+                lineHeight: 1.45,
+                zIndex: 100,
+              }}
+            >
+              <div
+                style={{
+                  fontWeight: 700,
+                  color: isLightTheme ? '#0f172a' : '#f8fafc',
+                  fontSize: '0.78rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  paddingBottom: 6,
+                  borderBottom: isLightTheme ? '1px solid rgba(0, 0, 0, 0.08)' : '1px solid rgba(255, 255, 255, 0.08)',
+                }}
+              >
+                <Info size={14} color={isLightTheme ? '#0284c7' : '#38bdf8'} />
+                <span>3D Navigation Guide</span>
+              </div>
+              <div>• <strong>Left Click + Drag:</strong> 360° Space Orbit</div>
+              <div>• <strong>Right Click + Drag:</strong> Pan / Translate View</div>
+              <div>• <strong>Scroll Wheel:</strong> Zoom In / Out</div>
+              <div>• <strong>Click Any Node:</strong> Focus Camera & Dossier</div>
+              <div>• <strong>Bottom-Right Gizmo:</strong> Snap X, Y, Z, or Isometric</div>
+            </div>
+          )}
+        </div>
+
         {/* Standalone Fullscreen Button */}
         {onToggleFullscreen && (
           <button
@@ -2019,32 +2123,6 @@ export default function Network3DGraph({
           </div>
         </div>
       )}
-
-      {/* 3D Space Legend in Bottom Left */}
-      <div style={{
-        position: 'absolute',
-        bottom: 16,
-        left: 16,
-        zIndex: 10,
-        background: isLightTheme ? 'rgba(255, 255, 255, 0.88)' : 'rgba(15, 23, 42, 0.75)',
-        backdropFilter: 'blur(10px)',
-        border: isLightTheme ? '1px solid rgba(203, 213, 225, 0.8)' : '1px solid rgba(255,255,255,0.08)',
-        borderRadius: 8,
-        padding: '8px 12px',
-        fontSize: '0.7rem',
-        color: isLightTheme ? '#475569' : '#94a3b8',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 3,
-        pointerEvents: 'none',
-        boxShadow: isLightTheme ? '0 4px 20px rgba(0, 0, 0, 0.06)' : 'none',
-      }}>
-        <div style={{ fontWeight: 700, color: isLightTheme ? '#0f172a' : '#e2e8f0', marginBottom: 2 }}>3D Navigation Guide:</div>
-        <div>• <strong>Left Click + Drag:</strong> 360° Space Orbit</div>
-        <div>• <strong>Right Click + Drag:</strong> Pan / Translate</div>
-        <div>• <strong>Scroll Wheel:</strong> Zoom In / Out</div>
-        <div>• <strong>Click Sphere:</strong> Fly to Target Node</div>
-      </div>
 
     </div>
   );
