@@ -1,11 +1,13 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import cytoscape from 'cytoscape';
 import type { Core, NodeSingular } from 'cytoscape';
 import {
   Search, ZoomIn, ZoomOut, Maximize2, Minimize2, RefreshCw, Filter,
   Download, Info, X, ChevronRight, Loader, Network, GitBranch,
-  FileText, Printer, ShieldAlert, CheckCircle2, ChevronDown, Box
+  FileText, Printer, ShieldAlert, CheckCircle2, ChevronDown, Box,
+  Sparkles, RotateCw, Eye, EyeOff, Check, LayoutGrid, Shuffle,
+  User, Phone as PhoneIcon, Car, Building2, MapPin, CreditCard, Briefcase, Package, Calendar, Circle
 } from 'lucide-react';
 import api from '../lib/api';
 import { ALL_ENTITIES, GRAPH_EDGES, FIR_RECORDS, PERSONS, TRANSACTIONS } from '../data/dataset';
@@ -78,6 +80,34 @@ const NODE_ICONS: Record<string, string> = {
   Person: '👤', Phone: '📱', Vehicle: '🚗',
   Organization: '🏢', Location: '📍', Account: '💳',
   Case: '📋', Event: '📅',
+};
+
+const TYPE_COLORS: Record<string, string> = {
+  Person: '#3b82f6',
+  Phone: '#10b981',
+  Vehicle: '#f97316',
+  Organization: '#8b5cf6',
+  Location: '#ef4444',
+  Account: '#f59e0b',
+  Case: '#06b6d4',
+  Evidence: '#6366f1',
+  Event: '#ec4899',
+};
+
+const renderEntityIcon = (type: string, size = 14, color?: string) => {
+  const iconProps = { size, color: color || TYPE_COLORS[type] || '#94a3b8', strokeWidth: 2 };
+  switch (type) {
+    case 'Person': return <User {...iconProps} />;
+    case 'Phone': return <PhoneIcon {...iconProps} />;
+    case 'Vehicle': return <Car {...iconProps} />;
+    case 'Organization': return <Building2 {...iconProps} />;
+    case 'Location': return <MapPin {...iconProps} />;
+    case 'Account': return <CreditCard {...iconProps} />;
+    case 'Case': return <Briefcase {...iconProps} />;
+    case 'Evidence': return <Package {...iconProps} />;
+    case 'Event': return <Calendar {...iconProps} />;
+    default: return <Circle {...iconProps} />;
+  }
 };
 
 function getNodeLabel(node: GraphNode): string {
@@ -308,6 +338,18 @@ export default function NetworkGraphPage() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const graphContainerRef = useRef<HTMLDivElement>(null);
 
+  // 2D Floating Filter, Search & Menu State
+  const [filter2DOpen, setFilter2DOpen] = useState(false);
+  const [search2DQuery, setSearch2DQuery] = useState('');
+  const [search2DOpen, setSearch2DOpen] = useState(false);
+  const [layoutMenu2DOpen, setLayoutMenu2DOpen] = useState(false);
+  const [selected2DTypes, setSelected2DTypes] = useState<Set<string>>(() => new Set([
+    'Person', 'Phone', 'Vehicle', 'Organization', 'Location', 'Account', 'Case', 'Evidence', 'Event'
+  ]));
+  const filter2DRef = useRef<HTMLDivElement>(null);
+  const search2DRef = useRef<HTMLDivElement>(null);
+  const layout2DRef = useRef<HTMLDivElement>(null);
+
   const toggleFullscreen = useCallback(() => {
     setIsFullscreen(prev => {
       const next = !prev;
@@ -362,6 +404,134 @@ export default function NetworkGraphPage() {
     }, 180);
     return () => clearTimeout(timer);
   }, [isFullscreen]);
+
+  // Sync selected types when allNodes changes
+  useEffect(() => {
+    if (allNodes.length > 0) {
+      const types = new Set<string>();
+      allNodes.forEach(n => { if (n.nodeType) types.add(n.nodeType); });
+      setSelected2DTypes(types);
+    }
+  }, [allNodes.length]);
+
+  // Click outside to close 2D filter, search and layout popovers
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (filter2DRef.current && !filter2DRef.current.contains(e.target as Node)) {
+        setFilter2DOpen(false);
+      }
+      if (search2DRef.current && !search2DRef.current.contains(e.target as Node)) {
+        setSearch2DOpen(false);
+      }
+      if (layout2DRef.current && !layout2DRef.current.contains(e.target as Node)) {
+        setLayoutMenu2DOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', handleClickOutside);
+    return () => window.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filter cytoscape nodes when selected2DTypes changes
+  useEffect(() => {
+    if (!cyInstance.current || viewDimension !== '2d') return;
+    const cy = cyInstance.current;
+    cy.batch(() => {
+      cy.nodes().forEach(node => {
+        const type = node.data('nodeType');
+        if (selected2DTypes.has(type)) {
+          node.show();
+        } else {
+          node.hide();
+        }
+      });
+    });
+  }, [selected2DTypes, viewDimension]);
+
+  const LAYOUT_OPTIONS = [
+    { value: 'cose', label: 'Force / Physics', icon: Sparkles },
+    { value: 'concentric', label: 'Concentric Rings', icon: Circle },
+    { value: 'circle', label: 'Circular Orbit', icon: RotateCw },
+    { value: 'breadthfirst', label: 'Hierarchy Tree', icon: GitBranch },
+    { value: 'grid', label: 'Matrix Grid', icon: LayoutGrid },
+    { value: 'random', label: 'Random Spread', icon: Shuffle },
+  ];
+
+  const available2DTypes = useMemo(() => {
+    const types = new Set<string>();
+    allNodes.forEach(n => {
+      if (n.nodeType) types.add(n.nodeType);
+    });
+    return Array.from(types);
+  }, [allNodes]);
+
+  const search2DResults = useMemo(() => {
+    const q = search2DQuery.trim().toLowerCase();
+    if (!q) return [];
+    return allNodes.filter(n => {
+      const label = getNodeLabel(n).toLowerCase();
+      const id = (n.id || '').toLowerCase();
+      const type = (n.nodeType || '').toLowerCase();
+      const occ = (n.occupation || (n as any).role || '').toLowerCase();
+      return label.includes(q) || id.includes(q) || type.includes(q) || occ.includes(q);
+    }).slice(0, 20);
+  }, [allNodes, search2DQuery]);
+
+  const isAll2DSelected = available2DTypes.length > 0 && available2DTypes.every(t => selected2DTypes.has(t));
+  const isNone2DSelected = selected2DTypes.size === 0;
+
+  const handleSelectAll2D = () => {
+    setSelected2DTypes(new Set(available2DTypes));
+  };
+
+  const handleClearAll2D = () => {
+    setSelected2DTypes(new Set());
+  };
+
+  const toggle2DType = (t: string) => {
+    setSelected2DTypes(prev => {
+      const next = new Set(prev);
+      if (next.has(t)) next.delete(t);
+      else next.add(t);
+      return next;
+    });
+  };
+
+  const handleSelect2DSearchResult = (node: GraphNode) => {
+    if (!selected2DTypes.has(node.nodeType)) {
+      setSelected2DTypes(prev => new Set([...prev, node.nodeType]));
+    }
+    setSearch2DQuery('');
+    setSearch2DOpen(false);
+    setSelectedNode(node);
+    setSelectedEdge(null);
+
+    if (cyInstance.current) {
+      const cyNode = cyInstance.current.$id(node.id);
+      if (cyNode && cyNode.length > 0) {
+        cyNode.show();
+        cyInstance.current.elements().removeClass('highlighted dimmed');
+        const neighborhood = cyNode.closedNeighborhood();
+        cyInstance.current.elements().not(neighborhood).addClass('dimmed');
+        neighborhood.addClass('highlighted');
+        cyInstance.current.animate({
+          center: { eles: cyNode },
+          zoom: 1.6,
+          duration: 500,
+        });
+      }
+    }
+  };
+
+  const handle2DSearchKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (search2DResults.length > 0) {
+        handleSelect2DSearchResult(search2DResults[0]);
+      }
+    } else if (e.key === 'Escape') {
+      setSearch2DOpen(false);
+    }
+  };
 
   const initCytoscape = useCallback(() => {
     if (!cyRef.current) return;
@@ -547,6 +717,8 @@ export default function NetworkGraphPage() {
         options = { ...options, radius: 260 };
       } else if (name === 'breadthfirst') {
         options = { ...options, directed: true, spacingFactor: 1.25 };
+      } else if (name === 'random') {
+        options = { ...options, animate: true, animationDuration: 600 };
       }
       cyInstance.current.layout(options).run();
     } catch (err) {
@@ -1096,6 +1268,7 @@ export default function NetworkGraphPage() {
                   <option value="circle">Layout: Circular Orbit</option>
                   <option value="breadthfirst">Layout: Hierarchy Tree</option>
                   <option value="grid">Layout: Matrix Grid</option>
+                  <option value="random">Layout: Random Spread</option>
                 </select>
                 <div style={{ width: 1, height: 18, background: 'var(--border-primary, #cbd5e1)', margin: '0 2px', flexShrink: 0 }} />
               </>
@@ -1233,131 +1406,712 @@ export default function NetworkGraphPage() {
             } : {})
           }}
         >
-          {/* Top-Right Floating Canvas Controls (2D Only) */}
+          {/* 2D Controls (Vertical Menu, Filters, Search & Top-Right Switch) */}
           {viewDimension === '2d' && (
-            <div
-              style={{
+            <>
+              {/* Left Top: Vertical Icon Toolbar (2D Theme) */}
+              <div style={{
                 position: 'absolute',
                 top: 14,
-                right: 16,
+                left: 14,
                 zIndex: 25,
                 display: 'flex',
+                flexDirection: 'column',
                 alignItems: 'center',
-                gap: 10,
-              }}
-            >
-              {/* Standalone 2D / 3D Segmented Switch (2D Theme) */}
-              <div style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                height: 32,
-                boxSizing: 'border-box',
-                background: 'var(--bg-elevated, #f1f5f9)',
-                backdropFilter: 'blur(8px)',
-                padding: '2px',
-                borderRadius: 8,
+                gap: 4,
+                background: 'rgba(255, 255, 255, 0.96)',
+                backdropFilter: 'blur(12px)',
+                padding: '5px',
+                borderRadius: 10,
                 border: '1px solid var(--border-primary, #cbd5e1)',
-                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-                gap: 2,
+                boxShadow: '0 4px 16px rgba(0, 0, 0, 0.08)',
               }}>
-                <button
-                  type="button"
-                  title="Currently in 2D Graph View"
-                  style={{
-                    height: 26,
-                    boxSizing: 'border-box',
-                    padding: '0 9px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 5,
-                    borderRadius: 6,
-                    cursor: 'default',
-                    background: '#ffffff',
-                    color: 'var(--accent-primary, #2563eb)',
-                    border: 'none',
-                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-                    fontSize: '0.74rem',
-                    fontWeight: 700,
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  <Network size={13} style={{ color: 'var(--accent-primary, #2563eb)' }} />
-                  <span>2D</span>
-                </button>
+                {/* Layout Selector Option */}
+                <div ref={layout2DRef} style={{ position: 'relative' }}>
+                  <button
+                    type="button"
+                    onClick={() => setLayoutMenu2DOpen(prev => !prev)}
+                    style={{
+                      width: 30,
+                      height: 30,
+                      padding: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                      transition: 'all 150ms ease',
+                      background: layoutMenu2DOpen ? 'var(--accent-light, #eff6ff)' : 'transparent',
+                      color: layoutMenu2DOpen ? 'var(--accent-primary, #2563eb)' : 'var(--text-primary, #0f172a)',
+                      border: layoutMenu2DOpen ? '1px solid rgba(37, 99, 235, 0.3)' : 'none',
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!layoutMenu2DOpen) {
+                        e.currentTarget.style.background = 'var(--bg-hover, #f1f5f9)';
+                        e.currentTarget.style.color = 'var(--accent-primary, #2563eb)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!layoutMenu2DOpen) {
+                        e.currentTarget.style.background = 'transparent';
+                        e.currentTarget.style.color = 'var(--text-primary, #0f172a)';
+                      }
+                    }}
+                    title="Change Graph Layout"
+                  >
+                    <LayoutGrid size={15} />
+                  </button>
 
+                  {/* Layout Selection Flyout */}
+                  {layoutMenu2DOpen && (
+                    <div style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 38,
+                      width: 195,
+                      background: '#ffffff',
+                      border: '1px solid var(--border-primary, #cbd5e1)',
+                      borderRadius: 10,
+                      boxShadow: '0 12px 32px rgba(0, 0, 0, 0.14)',
+                      padding: '6px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 2,
+                      zIndex: 100,
+                    }}>
+                      <div style={{
+                        padding: '4px 8px 6px',
+                        fontSize: '0.66rem',
+                        fontWeight: 700,
+                        color: '#64748b',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em',
+                        borderBottom: '1px solid var(--border-primary, #e2e8f0)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                      }}>
+                        <span>Graph Layout</span>
+                        <span style={{ fontSize: '0.62rem', color: '#94a3b8', fontWeight: 500 }}>{LAYOUT_OPTIONS.length} options</span>
+                      </div>
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4 }}>
+                        {LAYOUT_OPTIONS.map((opt) => {
+                          const isActive = layoutName === opt.value;
+                          const IconComp = opt.icon;
+                          return (
+                            <div
+                              key={opt.value}
+                              onClick={() => {
+                                applyLayout(opt.value);
+                                setLayoutMenu2DOpen(false);
+                              }}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '6px 8px',
+                                borderRadius: 6,
+                                background: isActive ? 'var(--accent-light, #eff6ff)' : 'transparent',
+                                color: isActive ? 'var(--accent-primary, #2563eb)' : '#0f172a',
+                                cursor: 'pointer',
+                                transition: 'background 120ms ease',
+                                fontSize: '0.76rem',
+                                fontWeight: isActive ? 600 : 500,
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!isActive) e.currentTarget.style.background = 'var(--bg-hover, #f8fafc)';
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!isActive) e.currentTarget.style.background = 'transparent';
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                                <IconComp size={13} style={{ color: isActive ? 'var(--accent-primary, #2563eb)' : '#64748b' }} />
+                                <span>{opt.label}</span>
+                              </div>
+                              {isActive && <Check size={13} style={{ color: 'var(--accent-primary, #2563eb)', strokeWidth: 2.5 }} />}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Divider */}
+                <div style={{ width: 20, height: 1, background: 'var(--border-primary, #e2e8f0)', margin: '2px 0' }} />
+
+                {/* Zoom In */}
                 <button
                   type="button"
-                  onClick={() => setViewDimension('3d')}
-                  title="Switch to 3D Space View"
+                  onClick={() => cyInstance.current?.zoom({ level: cyInstance.current.zoom() * 1.25 })}
                   style={{
-                    height: 26,
-                    boxSizing: 'border-box',
-                    padding: '0 9px',
+                    width: 30,
+                    height: 30,
+                    padding: 0,
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 5,
+                    justifyContent: 'center',
                     borderRadius: 6,
                     cursor: 'pointer',
                     transition: 'all 150ms ease',
                     background: 'transparent',
-                    color: 'var(--text-secondary, #64748b)',
+                    color: 'var(--text-primary, #0f172a)',
                     border: 'none',
-                    fontSize: '0.74rem',
-                    fontWeight: 500,
-                    whiteSpace: 'nowrap',
                   }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.color = 'var(--text-primary, #0f172a)';
-                    e.currentTarget.style.background = 'rgba(0, 0, 0, 0.05)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.color = 'var(--text-secondary, #64748b)';
-                    e.currentTarget.style.background = 'transparent';
-                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover, #f1f5f9)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  title="Zoom In"
                 >
-                  <Box size={13} style={{ color: 'var(--text-secondary, #64748b)' }} />
-                  <span>3D</span>
+                  <ZoomIn size={14} />
+                </button>
+
+                {/* Zoom Out */}
+                <button
+                  type="button"
+                  onClick={() => cyInstance.current?.zoom({ level: cyInstance.current.zoom() * 0.8 })}
+                  style={{
+                    width: 30,
+                    height: 30,
+                    padding: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: 6,
+                    cursor: 'pointer',
+                    transition: 'all 150ms ease',
+                    background: 'transparent',
+                    color: 'var(--text-primary, #0f172a)',
+                    border: 'none',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover, #f1f5f9)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  title="Zoom Out"
+                >
+                  <ZoomOut size={14} />
+                </button>
+
+                {/* Reset View */}
+                <button
+                  type="button"
+                  onClick={resetGraph}
+                  style={{
+                    width: 30,
+                    height: 30,
+                    padding: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: 6,
+                    cursor: 'pointer',
+                    transition: 'all 150ms ease',
+                    background: 'transparent',
+                    color: 'var(--text-primary, #0f172a)',
+                    border: 'none',
+                  }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover, #f1f5f9)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                  title="Reset & Fit View"
+                >
+                  <RotateCw size={14} />
                 </button>
               </div>
 
-              {/* Standalone Fullscreen Button (2D Theme) */}
-              <button
-                type="button"
-                onClick={toggleFullscreen}
-                title={isFullscreen ? 'Exit Fullscreen (Esc / F11)' : 'Full Screen (F11)'}
+              {/* Top Left Bar: Entity Filter & 2D Search Controls */}
+              <div style={{
+                position: 'absolute',
+                top: 14,
+                left: 66,
+                zIndex: 25,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}>
+                {/* Filter Dropdown */}
+                <div ref={filter2DRef} style={{ position: 'relative' }}>
+                  <button
+                    type="button"
+                    onClick={() => setFilter2DOpen(!filter2DOpen)}
+                    style={{
+                      height: 32,
+                      boxSizing: 'border-box',
+                      padding: '0 10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      background: '#ffffff',
+                      border: `1px solid ${filter2DOpen ? 'var(--accent-primary, #2563eb)' : 'var(--border-primary, #cbd5e1)'}`,
+                      borderRadius: 8,
+                      color: 'var(--text-primary, #0f172a)',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+                      transition: 'all 150ms ease',
+                    }}
+                    title="Filter Entities by Type"
+                  >
+                    <Filter size={13} style={{ color: 'var(--accent-primary, #2563eb)' }} />
+                    <span>Filters</span>
+                    <span style={{
+                      fontSize: '0.66rem',
+                      padding: '1px 6px',
+                      borderRadius: 10,
+                      background: isAll2DSelected
+                        ? 'rgba(0,0,0,0.06)'
+                        : isNone2DSelected
+                          ? '#fee2e2'
+                          : '#eff6ff',
+                      color: isAll2DSelected
+                        ? '#475569'
+                        : isNone2DSelected
+                          ? '#ef4444'
+                          : '#2563eb',
+                      fontWeight: 700,
+                    }}>
+                      {isAll2DSelected ? 'ALL' : isNone2DSelected ? 'NONE' : `${selected2DTypes.size} active`}
+                    </span>
+                    <ChevronDown
+                      size={12}
+                      style={{
+                        color: '#64748b',
+                        transform: filter2DOpen ? 'rotate(180deg)' : 'none',
+                        transition: 'transform 150ms ease',
+                      }}
+                    />
+                  </button>
+
+                  {filter2DOpen && (
+                    <div style={{
+                      position: 'absolute',
+                      top: 36,
+                      left: 0,
+                      width: 230,
+                      background: '#ffffff',
+                      border: '1px solid var(--border-primary, #cbd5e1)',
+                      borderRadius: 10,
+                      boxShadow: '0 12px 32px rgba(0, 0, 0, 0.14)',
+                      padding: '8px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 4,
+                      maxHeight: 340,
+                      overflowY: 'auto',
+                    }}>
+                      {/* Header / Quick Actions */}
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '2px 6px 6px 6px',
+                        borderBottom: '1px solid var(--border-primary, #e2e8f0)',
+                        fontSize: '0.68rem',
+                        color: '#64748b',
+                        fontWeight: 600,
+                      }}>
+                        <span>SELECT TYPES</span>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button
+                            type="button"
+                            onClick={handleSelectAll2D}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#2563eb',
+                              cursor: 'pointer',
+                              fontSize: '0.68rem',
+                              fontWeight: 600,
+                              padding: 0,
+                            }}
+                          >
+                            All
+                          </button>
+                          <span style={{ color: '#cbd5e1' }}>|</span>
+                          <button
+                            type="button"
+                            onClick={handleClearAll2D}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#64748b',
+                              cursor: 'pointer',
+                              fontSize: '0.68rem',
+                              fontWeight: 600,
+                              padding: 0,
+                            }}
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* List of entity checkboxes */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4 }}>
+                        {available2DTypes.map(t => {
+                          const isChecked = selected2DTypes.has(t);
+                          const col = TYPE_COLORS[t] || '#38bdf8';
+                          const count = allNodes.filter(n => n.nodeType === t).length;
+
+                          return (
+                            <div
+                              key={t}
+                              onClick={() => toggle2DType(t)}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '5px 8px',
+                                borderRadius: 6,
+                                background: isChecked ? 'rgba(37, 99, 235, 0.05)' : 'transparent',
+                                cursor: 'pointer',
+                                transition: 'background 120ms ease',
+                                userSelect: 'none',
+                              }}
+                              onMouseEnter={(e) => {
+                                if (!isChecked) e.currentTarget.style.background = 'var(--bg-hover, #f8fafc)';
+                              }}
+                              onMouseLeave={(e) => {
+                                if (!isChecked) e.currentTarget.style.background = 'transparent';
+                              }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                                <div style={{
+                                  width: 15,
+                                  height: 15,
+                                  borderRadius: 4,
+                                  border: `1.5px solid ${isChecked ? col : '#cbd5e1'}`,
+                                  background: isChecked ? col : 'transparent',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  transition: 'all 120ms ease',
+                                  flexShrink: 0,
+                                }}>
+                                  {isChecked && <Check size={11} color="#ffffff" strokeWidth={3.5} />}
+                                </div>
+
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 16, height: 16, flexShrink: 0 }}>
+                                  {renderEntityIcon(t, 13, col)}
+                                </div>
+                                <span style={{
+                                  fontSize: '0.76rem',
+                                  fontWeight: isChecked ? 600 : 500,
+                                  color: isChecked ? '#0f172a' : '#64748b',
+                                }}>
+                                  {t}
+                                </span>
+                              </div>
+
+                              <span style={{
+                                fontSize: '0.68rem',
+                                color: '#94a3b8',
+                                fontWeight: 500,
+                              }}>
+                                {count}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 2D Search Bar */}
+                <div ref={search2DRef} style={{ position: 'relative' }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    height: 32,
+                    boxSizing: 'border-box',
+                    padding: '0 8px 0 10px',
+                    background: '#ffffff',
+                    border: `1px solid ${search2DOpen && search2DQuery ? 'var(--accent-primary, #2563eb)' : 'var(--border-primary, #cbd5e1)'}`,
+                    borderRadius: 8,
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+                    transition: 'all 150ms ease',
+                    width: 220,
+                  }}>
+                    <Search size={13} style={{ color: 'var(--accent-primary, #2563eb)', flexShrink: 0 }} />
+                    <input
+                      type="text"
+                      value={search2DQuery}
+                      onChange={(e) => {
+                        setSearch2DQuery(e.target.value);
+                        setSearch2DOpen(true);
+                      }}
+                      onFocus={() => setSearch2DOpen(true)}
+                      onKeyDown={handle2DSearchKeyDown}
+                      placeholder="Search 2D entities..."
+                      style={{
+                        background: 'transparent',
+                        border: 'none',
+                        outline: 'none',
+                        color: 'var(--text-primary, #0f172a)',
+                        fontSize: '0.75rem',
+                        width: '100%',
+                        fontWeight: 500,
+                      }}
+                    />
+                    {search2DQuery && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearch2DQuery('');
+                          setSearch2DOpen(false);
+                        }}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          padding: 2,
+                          cursor: 'pointer',
+                          color: '#64748b',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Autocomplete Dropdown */}
+                  {search2DOpen && search2DQuery.trim().length > 0 && (
+                    <div style={{
+                      position: 'absolute',
+                      top: 36,
+                      left: 0,
+                      width: 270,
+                      background: '#ffffff',
+                      border: '1px solid var(--border-primary, #cbd5e1)',
+                      borderRadius: 10,
+                      boxShadow: '0 12px 32px rgba(0, 0, 0, 0.14)',
+                      padding: '6px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 2,
+                      maxHeight: 320,
+                      overflowY: 'auto',
+                      zIndex: 100,
+                    }}>
+                      <div style={{
+                        padding: '3px 8px 5px',
+                        fontSize: '0.64rem',
+                        color: '#64748b',
+                        fontWeight: 700,
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.04em',
+                        borderBottom: '1px solid var(--border-primary, #e2e8f0)',
+                      }}>
+                        {search2DResults.length} Result{search2DResults.length === 1 ? '' : 's'} (Press Enter to focus)
+                      </div>
+
+                      {search2DResults.length === 0 ? (
+                        <div style={{ padding: '12px 8px', fontSize: '0.75rem', color: '#94a3b8', textAlign: 'center' }}>
+                          No matching entities found
+                        </div>
+                      ) : (
+                        search2DResults.map((n) => {
+                          const col = TYPE_COLORS[n.nodeType] || '#38bdf8';
+                          const label = getNodeLabel(n);
+                          return (
+                            <div
+                              key={n.id}
+                              onClick={() => handleSelect2DSearchResult(n)}
+                              style={{
+                                padding: '6px 8px',
+                                borderRadius: 6,
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                gap: 8,
+                                transition: 'background 120ms ease',
+                              }}
+                              onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover, #f1f5f9)')}
+                              onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, overflow: 'hidden' }}>
+                                <div style={{
+                                  width: 24,
+                                  height: 24,
+                                  borderRadius: 6,
+                                  background: `${col}18`,
+                                  border: `1px solid ${col}40`,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  justifyContent: 'center',
+                                  flexShrink: 0,
+                                }}>
+                                  {renderEntityIcon(n.nodeType, 13, col)}
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                                  <span style={{
+                                    fontSize: '0.76rem',
+                                    fontWeight: 600,
+                                    color: '#0f172a',
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis',
+                                  }}>
+                                    {label}
+                                  </span>
+                                  <span style={{ fontSize: '0.64rem', color: '#64748b' }}>
+                                    ID: {n.id} {n.occupation ? `· ${n.occupation}` : ''}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <span style={{
+                                fontSize: '0.62rem',
+                                fontWeight: 700,
+                                padding: '1px 6px',
+                                borderRadius: 4,
+                                background: `${col}15`,
+                                color: col,
+                                border: `1px solid ${col}40`,
+                                textTransform: 'uppercase',
+                                flexShrink: 0,
+                              }}>
+                                {n.nodeType}
+                              </span>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Right Top: Switch & Fullscreen */}
+              <div
                 style={{
-                  width: 32,
-                  height: 32,
-                  boxSizing: 'border-box',
-                  padding: 0,
+                  position: 'absolute',
+                  top: 14,
+                  right: 16,
+                  zIndex: 25,
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRadius: 8,
-                  cursor: 'pointer',
-                  transition: 'all 150ms ease',
-                  background: isFullscreen ? 'var(--accent-light, #eff6ff)' : '#ffffff',
-                  color: isFullscreen ? 'var(--accent-primary, #2563eb)' : 'var(--text-primary, #0f172a)',
-                  border: isFullscreen ? '1px solid var(--accent-primary, #2563eb)' : '1px solid var(--border-primary, #cbd5e1)',
-                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
-                  flexShrink: 0,
-                }}
-                onMouseEnter={(e) => {
-                  if (!isFullscreen) {
-                    e.currentTarget.style.background = 'var(--bg-hover, #f8fafc)';
-                    e.currentTarget.style.borderColor = 'var(--border-secondary, #94a3b8)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (!isFullscreen) {
-                    e.currentTarget.style.background = '#ffffff';
-                    e.currentTarget.style.borderColor = 'var(--border-primary, #cbd5e1)';
-                  }
+                  gap: 10,
                 }}
               >
-                {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-              </button>
-            </div>
+                {/* Standalone 2D / 3D Segmented Switch (2D Theme) */}
+                <div style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  height: 32,
+                  boxSizing: 'border-box',
+                  background: 'var(--bg-elevated, #f1f5f9)',
+                  backdropFilter: 'blur(8px)',
+                  padding: '2px',
+                  borderRadius: 8,
+                  border: '1px solid var(--border-primary, #cbd5e1)',
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+                  gap: 2,
+                }}>
+                  <button
+                    type="button"
+                    title="Currently in 2D Graph View"
+                    style={{
+                      height: 26,
+                      boxSizing: 'border-box',
+                      padding: '0 9px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      borderRadius: 6,
+                      cursor: 'default',
+                      background: '#ffffff',
+                      color: 'var(--accent-primary, #2563eb)',
+                      border: 'none',
+                      boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+                      fontSize: '0.74rem',
+                      fontWeight: 700,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    <Network size={13} style={{ color: 'var(--accent-primary, #2563eb)' }} />
+                    <span>2D</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setViewDimension('3d')}
+                    title="Switch to 3D Space View"
+                    style={{
+                      height: 26,
+                      boxSizing: 'border-box',
+                      padding: '0 9px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      borderRadius: 6,
+                      cursor: 'pointer',
+                      transition: 'all 150ms ease',
+                      background: 'transparent',
+                      color: 'var(--text-secondary, #64748b)',
+                      border: 'none',
+                      fontSize: '0.74rem',
+                      fontWeight: 500,
+                      whiteSpace: 'nowrap',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = 'var(--text-primary, #0f172a)';
+                      e.currentTarget.style.background = 'rgba(0, 0, 0, 0.05)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = 'var(--text-secondary, #64748b)';
+                      e.currentTarget.style.background = 'transparent';
+                    }}
+                  >
+                    <Box size={13} style={{ color: 'var(--text-secondary, #64748b)' }} />
+                    <span>3D</span>
+                  </button>
+                </div>
+
+                {/* Standalone Fullscreen Button (2D Theme) */}
+                <button
+                  type="button"
+                  onClick={toggleFullscreen}
+                  title={isFullscreen ? 'Exit Fullscreen (Esc / F11)' : 'Full Screen (F11)'}
+                  style={{
+                    width: 32,
+                    height: 32,
+                    boxSizing: 'border-box',
+                    padding: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: 8,
+                    cursor: 'pointer',
+                    transition: 'all 150ms ease',
+                    background: isFullscreen ? 'var(--accent-light, #eff6ff)' : '#ffffff',
+                    color: isFullscreen ? 'var(--accent-primary, #2563eb)' : 'var(--text-primary, #0f172a)',
+                    border: isFullscreen ? '1px solid var(--accent-primary, #2563eb)' : '1px solid var(--border-primary, #cbd5e1)',
+                    boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+                    flexShrink: 0,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isFullscreen) {
+                      e.currentTarget.style.background = 'var(--bg-hover, #f8fafc)';
+                      e.currentTarget.style.borderColor = 'var(--border-secondary, #94a3b8)';
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isFullscreen) {
+                      e.currentTarget.style.background = '#ffffff';
+                      e.currentTarget.style.borderColor = 'var(--border-primary, #cbd5e1)';
+                    }
+                  }}
+                >
+                  {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                </button>
+              </div>
+            </>
           )}
 
           {loading && (
@@ -1417,97 +2171,7 @@ export default function NetworkGraphPage() {
             </div>
           )}
 
-          {/* 2D Floating Zoom & Reset Controls at Right Bottom */}
-          {viewDimension === '2d' && (
-            <div style={{
-              position: 'absolute',
-              bottom: 14,
-              right: 14,
-              zIndex: 25,
-              display: 'flex',
-              flexDirection: 'column',
-              background: '#ffffff',
-              borderRadius: 8,
-              border: '1px solid var(--border-primary, #cbd5e1)',
-              boxShadow: '0 4px 14px rgba(0, 0, 0, 0.12)',
-              overflow: 'hidden',
-            }}>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => cyInstance.current?.zoom({ level: cyInstance.current.zoom() * 1.25 })}
-                title="Zoom In"
-                style={{
-                  padding: '7px 9px',
-                  borderRadius: 0,
-                  borderBottom: '1px solid var(--border-primary, #e2e8f0)',
-                  color: 'var(--text-primary, #0f172a)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                }}
-              >
-                <ZoomIn size={15} />
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={() => cyInstance.current?.zoom({ level: cyInstance.current.zoom() * 0.8 })}
-                title="Zoom Out"
-                style={{
-                  padding: '7px 9px',
-                  borderRadius: 0,
-                  borderBottom: '1px solid var(--border-primary, #e2e8f0)',
-                  color: 'var(--text-primary, #0f172a)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                }}
-              >
-                <ZoomOut size={15} />
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                onClick={resetGraph}
-                title="Reset View"
-                style={{
-                  padding: '7px 9px',
-                  borderRadius: 0,
-                  color: 'var(--text-primary, #0f172a)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  cursor: 'pointer',
-                }}
-              >
-                <RefreshCw size={14} />
-              </button>
-            </div>
-          )}
 
-          {/* 2D Node Legend */}
-          {viewDimension === '2d' && (
-            <div style={{
-              position: 'absolute', top: 12, left: 12,
-              background: 'rgba(15, 23, 42, 0.88)', backdropFilter: 'blur(8px)',
-              border: '1px solid rgba(255, 255, 255, 0.1)',
-              borderRadius: 10, padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6,
-              boxShadow: '0 4px 16px rgba(0,0,0,0.4)', zIndex: 10,
-            }}>
-              <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#94a3b8', letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 2 }}>
-                Entity Legend
-              </span>
-              {Object.entries(NODE_COLORS).map(([type, color]) => (
-                <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.74rem', color: '#e2e8f0' }}>
-                  <span style={{ width: 9, height: 9, borderRadius: 2, background: color, display: 'block', flexShrink: 0, boxShadow: `0 0 6px ${color}88` }} />
-                  {NODE_ICONS[type]} {type}
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* Right panel — entity details */}
