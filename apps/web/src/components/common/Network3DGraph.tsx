@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { ViewHelper } from 'three/examples/jsm/helpers/ViewHelper.js';
 import {
   RotateCw, ZoomIn, ZoomOut, Maximize2, Minimize2, Play, Pause,
   Layers, Eye, EyeOff, RefreshCw, Sparkles, Filter
@@ -39,6 +40,7 @@ interface Network3DGraphProps {
   onSelectEdge?: (edge: Graph3DEdge | null) => void;
   isFullscreen?: boolean;
   onToggleFullscreen?: () => void;
+  onSwitchTo2D?: () => void;
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -72,19 +74,22 @@ export default function Network3DGraph({
   onSelectNode,
   isFullscreen,
   onToggleFullscreen,
+  onSwitchTo2D,
 }: Network3DGraphProps) {
   const mountRef = useRef<HTMLDivElement>(null);
-  const [autoRotate, setAutoRotate] = useState(true);
+  const [autoRotate, setAutoRotate] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
   const [activeFilter, setActiveFilter] = useState<string>('ALL');
   const [hoveredNode, setHoveredNode] = useState<Graph3DNode | null>(null);
-  const [simRunning, setSimRunning] = useState(true);
+  const [simRunning, setSimRunning] = useState(false);
+  const [sceneReady, setSceneReady] = useState(false);
 
   // References to keep Three.js state across re-renders
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
+  const viewHelperRef = useRef<ViewHelper | null>(null);
   const animFrameId = useRef<number | null>(null);
 
   const nodeMeshes = useRef<Map<string, THREE.Mesh>>(new Map());
@@ -158,6 +163,7 @@ export default function Network3DGraph({
     renderer.toneMappingExposure = 1.2;
     rendererRef.current = renderer;
 
+    renderer.autoClear = false;
     container.replaceChildren(renderer.domElement);
 
     // 4. Orbit Controls
@@ -169,6 +175,64 @@ export default function Network3DGraph({
     controls.maxDistance = 1600;
     controls.minDistance = 30;
     controlsRef.current = controls;
+
+    // 4b. 3D Viewport Orientation Gizmo (like Unity Scene Gizmo)
+    const viewHelper = new ViewHelper(camera, renderer.domElement);
+    viewHelper.setLabels('X', 'Y', 'Z');
+    viewHelper.setLabelStyle('bold 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', '#ffffff', 14);
+    viewHelper.location = { top: null, right: 18, bottom: 18, left: null };
+    viewHelper.center.copy(controls.target);
+    viewHelperRef.current = viewHelper;
+
+    // Disable depthWrite on all ViewHelper sprites so their transparent billboard quads never clip rings
+    viewHelper.traverse((child) => {
+      if ((child as any).isSprite) {
+        const sprite = child as THREE.Sprite;
+        sprite.material.depthWrite = false;
+        sprite.renderOrder = 2;
+      }
+    });
+
+    // Glowing center sphere inside gizmo
+    const centerGizmoMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.24, 20, 20),
+      new THREE.MeshBasicMaterial({ color: 0x38bdf8, depthWrite: false, toneMapped: false })
+    );
+    centerGizmoMesh.renderOrder = 1;
+    viewHelper.add(centerGizmoMesh);
+
+    // Two prominent 3D Torus Rings (Horizontal Equator & Vertical Meridian)
+    // depthTest: false & depthWrite: false ensures rings are never clipped or masked at ANY angle
+    // 1. Horizontal Ring (XZ plane - Equator)
+    const hRingGeo = new THREE.TorusGeometry(1.0, 0.032, 16, 64);
+    const hRingMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+      depthTest: false,
+      toneMapped: false,
+    });
+    const horizontalRing = new THREE.Mesh(hRingGeo, hRingMat);
+    horizontalRing.rotation.x = Math.PI / 2;
+    horizontalRing.renderOrder = 0;
+    viewHelper.add(horizontalRing);
+
+    // 2. Vertical Ring (XY plane - Meridian)
+    const vRingGeo = new THREE.TorusGeometry(1.0, 0.032, 16, 64);
+    const vRingMat = new THREE.MeshBasicMaterial({
+      color: 0x818cf8,
+      transparent: true,
+      opacity: 0.85,
+      depthWrite: false,
+      depthTest: false,
+      toneMapped: false,
+    });
+    const verticalRing = new THREE.Mesh(vRingGeo, vRingMat);
+    verticalRing.renderOrder = 0;
+    viewHelper.add(verticalRing);
+
+    setSceneReady(true);
 
     // 5. Lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
@@ -187,21 +251,128 @@ export default function Network3DGraph({
     grid.position.y = -180;
     scene.add(grid);
 
+    // 6b. Central Holographic Cyber Globe
+    const cyberGlobeGroup = new THREE.Group();
+    const globeRadius = Math.max(120, Math.cbrt(visibleNodes.length || 1) * 58);
+
+    const globeGeo = new THREE.SphereGeometry(globeRadius, 24, 16);
+    const globeMat = new THREE.MeshBasicMaterial({
+      color: 0x0284c7,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.10,
+    });
+    const globeMesh = new THREE.Mesh(globeGeo, globeMat);
+    cyberGlobeGroup.add(globeMesh);
+
+    const eqGeo = new THREE.RingGeometry(globeRadius - 0.8, globeRadius + 1.2, 56);
+    const eqMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.22,
+    });
+    const eqMesh = new THREE.Mesh(eqGeo, eqMat);
+    eqMesh.rotation.x = Math.PI / 2;
+    cyberGlobeGroup.add(eqMesh);
+
+    const merGeo = new THREE.RingGeometry(globeRadius - 0.8, globeRadius + 1.2, 56);
+    const merMat = new THREE.MeshBasicMaterial({
+      color: 0x818cf8,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.16,
+    });
+    const merMesh = new THREE.Mesh(merGeo, merMat);
+    merMesh.rotation.y = Math.PI / 2;
+    cyberGlobeGroup.add(merMesh);
+
+    scene.add(cyberGlobeGroup);
+
     // 7. Raycaster for clicking & hovering
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2(-9999, -9999);
 
+    let pointerDownPos = { x: 0, y: 0 };
+    const onPointerDown = (event: MouseEvent) => {
+      pointerDownPos = { x: event.clientX, y: event.clientY };
+    };
+
     const onMouseMove = (event: MouseEvent) => {
       const rect = container.getBoundingClientRect();
-      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      const mouseX = event.clientX - rect.left;
+      const mouseY = event.clientY - rect.top;
+
+      // Bottom-right Gizmo region check (dim=128, right=18, bottom=18)
+      const gizmoCenterX = rect.width - 18 - 64;
+      const gizmoCenterY = rect.height - 18 - 64;
+      const distFromGizmo = Math.hypot(mouseX - gizmoCenterX, mouseY - gizmoCenterY);
+
+      if (distFromGizmo <= 64) {
+        container.style.cursor = 'pointer';
+        setHoveredNode(null);
+        mouse.x = -9999;
+        mouse.y = -9999;
+        return;
+      }
+
+      mouse.x = (mouseX / rect.width) * 2 - 1;
+      mouse.y = -(mouseY / rect.height) * 2 + 1;
+    };
+
+    // Smooth transition to Isometric perspective
+    const animateToIsometric = () => {
+      const currentDist = camera.position.distanceTo(controls.target) || 420;
+      const isoDir = new THREE.Vector3(1, 0.75, 1).normalize();
+      const targetPos = controls.target.clone().add(isoDir.multiplyScalar(currentDist));
+
+      let t = 0;
+      const startPos = camera.position.clone();
+      const startTarget = controls.target.clone();
+      const isoAnim = () => {
+        t += 0.05;
+        const ease = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(t, 1));
+        camera.position.lerpVectors(startPos, targetPos, ease);
+        camera.lookAt(startTarget);
+        controls.update();
+        if (t < 1) {
+          requestAnimationFrame(isoAnim);
+        }
+      };
+      isoAnim();
     };
 
     const onClick = (event: MouseEvent) => {
+      // If mouse moved noticeably during press, user was orbiting/dragging -> ignore click
+      const distMoved = Math.hypot(event.clientX - pointerDownPos.x, event.clientY - pointerDownPos.y);
+      if (distMoved > 6) return;
+
       const rect = container.getBoundingClientRect();
+      const clickX = event.clientX - rect.left;
+      const clickY = event.clientY - rect.top;
+
+      // Check if click was inside Bottom-Right Gizmo (dim=128, right=18, bottom=18)
+      const gizmoCenterX = rect.width - 18 - 64;
+      const gizmoCenterY = rect.height - 18 - 64;
+      const distFromGizmo = Math.hypot(clickX - gizmoCenterX, clickY - gizmoCenterY);
+
+      if (distFromGizmo <= 64) {
+        // Center sphere click -> Isometric view
+        if (distFromGizmo <= 20) {
+          animateToIsometric();
+          return;
+        }
+
+        // Axis cone / badge click -> Snap to orthogonal axis
+        if (viewHelper.handleClick(event)) {
+          return;
+        }
+        return; // Absorb click inside gizmo bounds so background nodes aren't triggered
+      }
+
       const clickMouse = new THREE.Vector2(
-        ((event.clientX - rect.left) / rect.width) * 2 - 1,
-        -((event.clientY - rect.top) / rect.height) * 2 + 1
+        (clickX / rect.width) * 2 - 1,
+        -(clickY / rect.height) * 2 + 1
       );
 
       raycaster.setFromCamera(clickMouse, camera);
@@ -233,6 +404,7 @@ export default function Network3DGraph({
       }
     };
 
+    container.addEventListener('pointerdown', onPointerDown);
     container.addEventListener('mousemove', onMouseMove);
     container.addEventListener('click', onClick);
 
@@ -457,17 +629,36 @@ export default function Network3DGraph({
         halo.scale.set(scale, scale, scale);
       });
 
-      controls.update();
+      cyberGlobeGroup.rotation.y += 0.0006;
+
+      viewHelper.center.copy(controls.target);
+      if (viewHelper.animating) {
+        controls.enabled = false;
+        viewHelper.update(delta);
+      } else {
+        controls.enabled = true;
+        controls.update();
+      }
+
+      renderer.clear();
       renderer.render(scene, camera);
+      viewHelper.render(renderer);
     };
 
     animFrameId.current = requestAnimationFrame(animate);
 
     return () => {
       if (animFrameId.current) cancelAnimationFrame(animFrameId.current);
+      setSceneReady(false);
       resizeObserver.disconnect();
+      container.removeEventListener('pointerdown', onPointerDown);
       container.removeEventListener('mousemove', onMouseMove);
       container.removeEventListener('click', onClick);
+      hRingGeo.dispose();
+      hRingMat.dispose();
+      vRingGeo.dispose();
+      vRingMat.dispose();
+      viewHelper.dispose();
       renderer.dispose();
     };
   }, [visibleNodes, visibleEdges, autoRotate, simRunning]);
@@ -640,18 +831,19 @@ export default function Network3DGraph({
       {/* 3D WebGL Canvas Container */}
       <div ref={mountRef} style={{ width: '100%', height: '100%', cursor: 'grab' }} />
 
-      {/* Floating 3D Control Bar */}
+      {/* Floating 3D Control Bar (Vertical Icon-Only Toolbar) */}
       <div style={{
         position: 'absolute',
         top: 14,
         left: 16,
         display: 'flex',
+        flexDirection: 'column',
         alignItems: 'center',
-        gap: 8,
+        gap: 6,
         zIndex: 10,
-        background: 'rgba(15, 23, 42, 0.85)',
+        background: 'rgba(15, 23, 42, 0.88)',
         backdropFilter: 'blur(12px)',
-        padding: '6px 10px',
+        padding: '6px',
         borderRadius: 10,
         border: '1px solid rgba(255, 255, 255, 0.12)',
         boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
@@ -659,66 +851,143 @@ export default function Network3DGraph({
         {/* Orbit Auto-Rotate Toggle */}
         <button
           onClick={() => setAutoRotate(!autoRotate)}
-          className={`btn btn-sm ${autoRotate ? 'btn-primary' : 'btn-ghost'}`}
-          style={{ padding: '5px 10px', fontSize: '0.75rem', gap: 5, color: '#fff' }}
+          style={{
+            width: 30,
+            height: 30,
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 6,
+            cursor: 'pointer',
+            transition: 'all 150ms ease',
+            background: autoRotate ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+            color: autoRotate ? '#38bdf8' : '#94a3b8',
+            border: autoRotate ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
+            boxShadow: autoRotate ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
+          }}
           title={autoRotate ? 'Pause 3D Orbit' : 'Start 3D Orbit'}
         >
-          {autoRotate ? <Pause size={13} /> : <Play size={13} />}
-          <span>{autoRotate ? 'Orbiting' : 'Orbit'}</span>
+          {autoRotate ? <Pause size={14} /> : <Play size={14} />}
         </button>
 
         {/* Labels Toggle */}
         <button
           onClick={() => setShowLabels(!showLabels)}
-          className={`btn btn-sm ${showLabels ? 'btn-secondary' : 'btn-ghost'}`}
-          style={{ padding: '5px 9px', fontSize: '0.75rem', gap: 5, color: '#fff' }}
-          title="Toggle 3D Floating Labels"
+          style={{
+            width: 30,
+            height: 30,
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 6,
+            cursor: 'pointer',
+            transition: 'all 150ms ease',
+            background: showLabels ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+            color: showLabels ? '#38bdf8' : '#94a3b8',
+            border: showLabels ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
+            boxShadow: showLabels ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
+          }}
+          title={showLabels ? 'Hide Floating Labels' : 'Show Floating Labels'}
         >
-          {showLabels ? <Eye size={13} /> : <EyeOff size={13} />}
-          <span>Labels</span>
+          {showLabels ? <Eye size={14} /> : <EyeOff size={14} />}
         </button>
 
         {/* Physics toggle */}
         <button
           onClick={() => setSimRunning(!simRunning)}
-          className={`btn btn-sm ${simRunning ? 'btn-secondary' : 'btn-ghost'}`}
-          style={{ padding: '5px 9px', fontSize: '0.75rem', gap: 5, color: '#fff' }}
-          title="Pause/Resume 3D Physics Simulation"
+          style={{
+            width: 30,
+            height: 30,
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 6,
+            cursor: 'pointer',
+            transition: 'all 150ms ease',
+            background: simRunning ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.05)',
+            color: simRunning ? '#38bdf8' : '#94a3b8',
+            border: simRunning ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
+            boxShadow: simRunning ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
+          }}
+          title={simRunning ? 'Pause 3D Physics (Static)' : 'Resume 3D Physics'}
         >
-          <Sparkles size={13} />
-          <span>{simRunning ? 'Physics' : 'Static'}</span>
+          <Sparkles size={14} />
         </button>
 
-        <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,0.15)', margin: '0 2px' }} />
+        {/* Horizontal Divider */}
+        <div style={{ width: 20, height: 1, background: 'rgba(255,255,255,0.15)', margin: '2px 0' }} />
 
         {/* Zoom Controls */}
-        <button onClick={() => handleZoom(0.85)} className="btn btn-ghost btn-sm" style={{ padding: 5, color: '#fff' }} title="Zoom In">
+        <button
+          onClick={() => handleZoom(0.85)}
+          style={{
+            width: 30,
+            height: 30,
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 6,
+            cursor: 'pointer',
+            transition: 'all 150ms ease',
+            background: 'rgba(255, 255, 255, 0.05)',
+            color: '#94a3b8',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+          }}
+          title="Zoom In"
+        >
           <ZoomIn size={14} />
         </button>
-        <button onClick={() => handleZoom(1.15)} className="btn btn-ghost btn-sm" style={{ padding: 5, color: '#fff' }} title="Zoom Out">
+        <button
+          onClick={() => handleZoom(1.15)}
+          style={{
+            width: 30,
+            height: 30,
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 6,
+            cursor: 'pointer',
+            transition: 'all 150ms ease',
+            background: 'rgba(255, 255, 255, 0.05)',
+            color: '#94a3b8',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+          }}
+          title="Zoom Out"
+        >
           <ZoomOut size={14} />
         </button>
-        <button onClick={handleResetCamera} className="btn btn-ghost btn-sm" style={{ padding: 5, color: '#fff' }} title="Reset 3D Camera">
+        <button
+          onClick={handleResetCamera}
+          style={{
+            width: 30,
+            height: 30,
+            padding: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: 6,
+            cursor: 'pointer',
+            transition: 'all 150ms ease',
+            background: 'rgba(255, 255, 255, 0.05)',
+            color: '#94a3b8',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+          }}
+          title="Reset 3D Camera"
+        >
           <RotateCw size={14} />
         </button>
-
-        {onToggleFullscreen && (
-          <button
-            onClick={onToggleFullscreen}
-            className={`btn btn-sm ${isFullscreen ? 'btn-primary' : 'btn-ghost'}`}
-            style={{ width: 28, height: 28, padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff' }}
-            title={isFullscreen ? 'Exit Fullscreen (Esc / F11)' : 'Full Screen (F11)'}
-          >
-            {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-          </button>
-        )}
       </div>
 
       {/* Schema Filter Badges Bar */}
       <div style={{
         position: 'absolute',
         top: 14,
-        right: onToggleFullscreen ? 58 : 16,
+        left: 62,
         display: 'flex',
         alignItems: 'center',
         gap: 6,
@@ -729,7 +998,7 @@ export default function Network3DGraph({
         borderRadius: 10,
         border: '1px solid rgba(255, 255, 255, 0.12)',
         boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
-        maxWidth: '55%',
+        maxWidth: 'calc(100% - 340px)',
         overflowX: 'auto',
       }}>
         <span style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 600, paddingRight: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -763,6 +1032,71 @@ export default function Network3DGraph({
             </button>
           );
         })}
+      </div>
+
+      {/* Right Top Corner: Switch to 2D & Fullscreen Buttons */}
+      <div style={{
+        position: 'absolute',
+        top: 14,
+        right: 16,
+        zIndex: 20,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+      }}>
+        {onSwitchTo2D && (
+          <button
+            type="button"
+            onClick={onSwitchTo2D}
+            title="Switch to 2D Graph View"
+            style={{
+              height: 34,
+              padding: '0 12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              background: '#ffffff',
+              color: '#0f172a',
+              border: '1px solid #cbd5e1',
+              borderRadius: 8,
+              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.25)',
+              cursor: 'pointer',
+              fontSize: '0.78rem',
+              fontWeight: 600,
+              transition: 'all 0.15s ease',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <Layers size={14} style={{ color: '#0284c7' }} />
+            <span>Switch to 2D</span>
+          </button>
+        )}
+
+        {onToggleFullscreen && (
+          <button
+            type="button"
+            onClick={onToggleFullscreen}
+            title={isFullscreen ? 'Exit Fullscreen (Esc / F11)' : 'Full Screen (F11)'}
+            style={{
+              width: 34,
+              height: 34,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              background: '#ffffff',
+              color: '#0f172a',
+              border: '1px solid #cbd5e1',
+              borderRadius: 8,
+              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.25)',
+              cursor: 'pointer',
+              padding: 0,
+              flexShrink: 0,
+              transition: 'all 0.15s ease',
+            }}
+          >
+            {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
+        )}
       </div>
 
       {/* Hover Info Tooltip HUD */}
@@ -815,11 +1149,11 @@ export default function Network3DGraph({
         </div>
       )}
 
-      {/* 3D Space Legend in Bottom Right */}
+      {/* 3D Space Legend in Bottom Left */}
       <div style={{
         position: 'absolute',
-        bottom: 20,
-        right: 20,
+        bottom: 16,
+        left: 16,
         zIndex: 10,
         background: 'rgba(15, 23, 42, 0.75)',
         backdropFilter: 'blur(10px)',
@@ -839,6 +1173,7 @@ export default function Network3DGraph({
         <div>• <strong>Scroll Wheel:</strong> Zoom In / Out</div>
         <div>• <strong>Click Sphere:</strong> Fly to Target Node</div>
       </div>
+
     </div>
   );
 }
