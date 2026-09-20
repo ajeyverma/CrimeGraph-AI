@@ -321,8 +321,6 @@ export default function NetworkGraphPage() {
   const [loading, setLoading] = useState(false);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [selectedEdge, setSelectedEdge] = useState<GraphEdge | null>(null);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [entityType, setEntityType] = useState('');
   const [nodeCount, setNodeCount] = useState(0);
   const [edgeCount, setEdgeCount] = useState(0);
   const [filterTypes, setFilterTypes] = useState<Set<string>>(new Set());
@@ -1042,47 +1040,6 @@ export default function NetworkGraphPage() {
     });
   }, [investigationCase, entityIdParam]);
 
-  const handleSearch = async () => {
-    if (!searchTerm || !cyInstance.current) return;
-    setLoading(true);
-    try {
-      const res = await api.get(`/api/entities/search?q=${encodeURIComponent(searchTerm)}&type=${entityType}&limit=5`);
-      const entities = res.data?.entities || [];
-      if (entities.length > 0) {
-        const first = entities[0];
-        try {
-          const netRes = await api.get(`/api/entities/${first.nodeType}/${first.id}/network?depth=2&limit=60`);
-          if (netRes.data?.nodes && netRes.data.nodes.length > 0) {
-            renderGraph(cyInstance.current, netRes.data.nodes, netRes.data.edges || []);
-            return;
-          }
-        } catch {
-          // fall through to local fallback
-        }
-        renderEntityFallback(cyInstance.current, first.id, first.nodeType);
-      } else {
-        const localMatch = (ALL_ENTITIES as any[]).find(e => {
-          const label = (e.name || e.number || e.licensePlate || e.accountNumber || e.id || '').toLowerCase();
-          const matchTerm = label.includes(searchTerm.toLowerCase());
-          return entityType ? matchTerm && e.nodeType === entityType : matchTerm;
-        });
-        if (localMatch) {
-          renderEntityFallback(cyInstance.current, localMatch.id, localMatch.nodeType);
-        }
-      }
-    } catch {
-      const localMatch = (ALL_ENTITIES as any[]).find(e => {
-        const label = (e.name || e.number || e.licensePlate || e.accountNumber || e.id || '').toLowerCase();
-        const matchTerm = label.includes(searchTerm.toLowerCase());
-        return entityType ? matchTerm && e.nodeType === entityType : matchTerm;
-      });
-      if (localMatch && cyInstance.current) {
-        renderEntityFallback(cyInstance.current, localMatch.id, localMatch.nodeType);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const expandNode = async (node: GraphNode) => {
     if (!cyInstance.current || !node.nodeType) return;
@@ -1181,158 +1138,6 @@ export default function NetworkGraphPage() {
           Focused entity graph: <strong>{entityTypeParam} · {entityIdParam}</strong>. Exploring connections, direct relationships, and link predictions.
         </div>
       )}
-      {/* Toolbar */}
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Network size={18} color="var(--accent-primary)" />
-          <h2 style={{ fontSize: '1.1rem' }}>Network Graph</h2>
-        </div>
-
-        <div style={{ flex: 1, display: 'flex', gap: 8, maxWidth: 500 }}>
-          <select
-            className="form-select"
-            value={entityType}
-            onChange={e => setEntityType(e.target.value)}
-            style={{ width: 120 }}
-          >
-            <option value="">All Types</option>
-            {['Person', 'Phone', 'Vehicle', 'Organization', 'Location', 'Account', 'Case', 'Event'].map(t => (
-              <option key={t} value={t}>{t}</option>
-            ))}
-          </select>
-          <div className="search-input-wrapper" style={{ flex: 1, position: 'relative' }}>
-            <Search
-              size={14}
-              className="search-icon"
-              style={{ cursor: 'pointer', pointerEvents: 'auto' }}
-              onClick={handleSearch}
-              title="Click or press Enter to search"
-            />
-            <input
-              type="text"
-              className="form-input"
-              placeholder="Search entity to focus (press Enter)..."
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleSearch()}
-            />
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: 6, marginLeft: 'auto', alignItems: 'center', flexWrap: 'wrap' }}>
-          {/* Integrated Inline Switch & Layout Bar with locked fixed height */}
-          <div style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-            height: 36,
-            minHeight: 36,
-            maxHeight: 36,
-            boxSizing: 'border-box',
-            background: 'var(--bg-elevated, #f1f5f9)',
-            padding: '3px 4px',
-            borderRadius: 'var(--radius-md, 8px)',
-            border: '1px solid var(--border-primary, #cbd5e1)',
-            boxShadow: 'var(--shadow-sm, 0 1px 2px rgba(0, 0, 0, 0.04))',
-            flexShrink: 0,
-            whiteSpace: 'nowrap',
-          }}>
-            {/* 2D Layout Selector to the LEFT of the 2D graph button */}
-            {viewDimension === '2d' && (
-              <>
-                <select
-                  value={layoutName}
-                  onChange={e => applyLayout(e.target.value)}
-                  style={{
-                    fontSize: '0.78rem',
-                    height: 28,
-                    minHeight: 28,
-                    maxHeight: 28,
-                    lineHeight: '26px',
-                    boxSizing: 'border-box',
-                    padding: '0 8px',
-                    minWidth: 150,
-                    background: '#ffffff',
-                    border: '1px solid var(--border-primary, #cbd5e1)',
-                    color: 'var(--text-primary, #0f172a)',
-                    borderRadius: 6,
-                    cursor: 'pointer',
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.03)',
-                    outline: 'none',
-                    margin: 0,
-                  }}
-                  title="Change 2D Graph Layout"
-                >
-                  <option value="cose">Layout: Force / Physics</option>
-                  <option value="concentric">Layout: Concentric Rings</option>
-                  <option value="circle">Layout: Circular Orbit</option>
-                  <option value="breadthfirst">Layout: Hierarchy Tree</option>
-                  <option value="grid">Layout: Matrix Grid</option>
-                  <option value="random">Layout: Random Spread</option>
-                </select>
-                <div style={{ width: 1, height: 18, background: 'var(--border-primary, #cbd5e1)', margin: '0 2px', flexShrink: 0 }} />
-              </>
-            )}
-
-            <button
-              type="button"
-              onClick={() => setViewDimension('2d')}
-              style={{
-                height: 28,
-                minHeight: 28,
-                maxHeight: 28,
-                boxSizing: 'border-box',
-                borderRadius: 6,
-                padding: '0 10px',
-                fontSize: '0.78rem',
-                gap: 6,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: viewDimension === '2d' ? 600 : 500,
-                whiteSpace: 'nowrap',
-                border: 'none',
-                background: viewDimension === '2d' ? '#ffffff' : 'transparent',
-                color: viewDimension === '2d' ? 'var(--accent-primary, #2563eb)' : 'var(--text-tertiary, #475569)',
-                boxShadow: viewDimension === '2d' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                margin: 0,
-              }}
-            >
-              <Network size={14} /> 2D Graph
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewDimension('3d')}
-              style={{
-                height: 28,
-                minHeight: 28,
-                maxHeight: 28,
-                boxSizing: 'border-box',
-                borderRadius: 6,
-                padding: '0 10px',
-                fontSize: '0.78rem',
-                gap: 6,
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontWeight: viewDimension === '3d' ? 600 : 500,
-                whiteSpace: 'nowrap',
-                border: 'none',
-                background: viewDimension === '3d' ? 'linear-gradient(135deg, #2563eb, #7c3aed)' : 'transparent',
-                color: viewDimension === '3d' ? '#ffffff' : 'var(--text-tertiary, #475569)',
-                boxShadow: viewDimension === '3d' ? '0 2px 6px rgba(37,99,235,0.25)' : 'none',
-                cursor: 'pointer',
-                transition: 'all 0.15s ease',
-                margin: 0,
-              }}
-            >
-              <Box size={14} /> 3D Space
-            </button>
-          </div>
-        </div>
-      </div>
 
       {/* Path finder bar */}
       {pathMode && viewDimension === '2d' && (
@@ -1414,7 +1219,7 @@ export default function NetworkGraphPage() {
                 position: 'absolute',
                 top: 14,
                 left: 14,
-                zIndex: 25,
+                zIndex: layoutMenu2DOpen ? 60 : 25,
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
@@ -1430,7 +1235,11 @@ export default function NetworkGraphPage() {
                 <div ref={layout2DRef} style={{ position: 'relative' }}>
                   <button
                     type="button"
-                    onClick={() => setLayoutMenu2DOpen(prev => !prev)}
+                    onClick={() => {
+                      setLayoutMenu2DOpen(prev => !prev);
+                      setFilter2DOpen(false);
+                      setSearch2DOpen(false);
+                    }}
                     style={{
                       width: 30,
                       height: 30,
@@ -1623,7 +1432,7 @@ export default function NetworkGraphPage() {
                 position: 'absolute',
                 top: 14,
                 left: 66,
-                zIndex: 25,
+                zIndex: (filter2DOpen || search2DOpen) ? 45 : 25,
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
@@ -1632,7 +1441,10 @@ export default function NetworkGraphPage() {
                 <div ref={filter2DRef} style={{ position: 'relative' }}>
                   <button
                     type="button"
-                    onClick={() => setFilter2DOpen(!filter2DOpen)}
+                    onClick={() => {
+                      setFilter2DOpen(!filter2DOpen);
+                      setLayoutMenu2DOpen(false);
+                    }}
                     style={{
                       height: 32,
                       boxSizing: 'border-box',
@@ -1841,8 +1653,12 @@ export default function NetworkGraphPage() {
                       onChange={(e) => {
                         setSearch2DQuery(e.target.value);
                         setSearch2DOpen(true);
+                        setLayoutMenu2DOpen(false);
                       }}
-                      onFocus={() => setSearch2DOpen(true)}
+                      onFocus={() => {
+                        setSearch2DOpen(true);
+                        setLayoutMenu2DOpen(false);
+                      }}
                       onKeyDown={handle2DSearchKeyDown}
                       placeholder="Search 2D entities..."
                       style={{
