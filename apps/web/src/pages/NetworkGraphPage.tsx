@@ -1239,65 +1239,123 @@ export default function NetworkGraphPage() {
               style={{
                 position: 'absolute',
                 top: 14,
-                right: 14,
+                right: 16,
                 zIndex: 25,
                 display: 'flex',
                 alignItems: 'center',
-                gap: 8,
+                gap: 10,
               }}
             >
-              {/* When in Fullscreen in 2D: button to switch to 3D */}
-              {isFullscreen && (
+              {/* Standalone 2D / 3D Segmented Switch (2D Theme) */}
+              <div style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                height: 32,
+                boxSizing: 'border-box',
+                background: 'var(--bg-elevated, #f1f5f9)',
+                backdropFilter: 'blur(8px)',
+                padding: '2px',
+                borderRadius: 8,
+                border: '1px solid var(--border-primary, #cbd5e1)',
+                boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
+                gap: 2,
+              }}>
                 <button
                   type="button"
-                  onClick={() => setViewDimension('3d')}
-                  title="Switch to 3D Space"
+                  title="Currently in 2D Graph View"
                   style={{
-                    height: 34,
-                    padding: '0 12px',
+                    height: 26,
+                    boxSizing: 'border-box',
+                    padding: '0 9px',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: 6,
+                    gap: 5,
+                    borderRadius: 6,
+                    cursor: 'default',
                     background: '#ffffff',
-                    color: 'var(--text-primary, #0f172a)',
-                    border: '1px solid var(--border-primary, #cbd5e1)',
-                    borderRadius: 8,
-                    boxShadow: '0 2px 10px rgba(0, 0, 0, 0.15)',
-                    cursor: 'pointer',
-                    fontSize: '0.8rem',
-                    fontWeight: 600,
-                    transition: 'all 0.15s ease',
+                    color: 'var(--accent-primary, #2563eb)',
+                    border: 'none',
+                    boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+                    fontSize: '0.74rem',
+                    fontWeight: 700,
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  <Box size={14} color="#2563eb" />
-                  <span>Switch to 3D</span>
+                  <Network size={13} style={{ color: 'var(--accent-primary, #2563eb)' }} />
+                  <span>2D</span>
                 </button>
-              )}
 
-              {/* Fullscreen Toggle Button */}
+                <button
+                  type="button"
+                  onClick={() => setViewDimension('3d')}
+                  title="Switch to 3D Space View"
+                  style={{
+                    height: 26,
+                    boxSizing: 'border-box',
+                    padding: '0 9px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 5,
+                    borderRadius: 6,
+                    cursor: 'pointer',
+                    transition: 'all 150ms ease',
+                    background: 'transparent',
+                    color: 'var(--text-secondary, #64748b)',
+                    border: 'none',
+                    fontSize: '0.74rem',
+                    fontWeight: 500,
+                    whiteSpace: 'nowrap',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = 'var(--text-primary, #0f172a)';
+                    e.currentTarget.style.background = 'rgba(0, 0, 0, 0.05)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = 'var(--text-secondary, #64748b)';
+                    e.currentTarget.style.background = 'transparent';
+                  }}
+                >
+                  <Box size={13} style={{ color: 'var(--text-secondary, #64748b)' }} />
+                  <span>3D</span>
+                </button>
+              </div>
+
+              {/* Standalone Fullscreen Button (2D Theme) */}
               <button
                 type="button"
                 onClick={toggleFullscreen}
                 title={isFullscreen ? 'Exit Fullscreen (Esc / F11)' : 'Full Screen (F11)'}
                 style={{
-                  width: 34,
-                  height: 34,
+                  width: 32,
+                  height: 32,
+                  boxSizing: 'border-box',
+                  padding: 0,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  background: '#ffffff',
-                  color: 'var(--text-primary, #0f172a)',
-                  border: '1px solid var(--border-primary, #cbd5e1)',
                   borderRadius: 8,
-                  boxShadow: '0 2px 10px rgba(0, 0, 0, 0.15)',
                   cursor: 'pointer',
-                  transition: 'all 0.15s ease',
-                  padding: 0,
+                  transition: 'all 150ms ease',
+                  background: isFullscreen ? 'var(--accent-light, #eff6ff)' : '#ffffff',
+                  color: isFullscreen ? 'var(--accent-primary, #2563eb)' : 'var(--text-primary, #0f172a)',
+                  border: isFullscreen ? '1px solid var(--accent-primary, #2563eb)' : '1px solid var(--border-primary, #cbd5e1)',
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.08)',
                   flexShrink: 0,
                 }}
+                onMouseEnter={(e) => {
+                  if (!isFullscreen) {
+                    e.currentTarget.style.background = 'var(--bg-hover, #f8fafc)';
+                    e.currentTarget.style.borderColor = 'var(--border-secondary, #94a3b8)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isFullscreen) {
+                    e.currentTarget.style.background = '#ffffff';
+                    e.currentTarget.style.borderColor = 'var(--border-primary, #cbd5e1)';
+                  }
+                }}
               >
-                {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
               </button>
             </div>
           )}

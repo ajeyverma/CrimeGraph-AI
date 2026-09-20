@@ -6,7 +6,8 @@ import {
   RotateCw, ZoomIn, ZoomOut, Maximize2, Minimize2, Play, Pause,
   Layers, Eye, EyeOff, RefreshCw, Sparkles, Filter, Check, ChevronDown,
   Search, X,
-  User, Phone as PhoneIcon, Car, Building2, MapPin, CreditCard, Briefcase, Package, Calendar, Circle
+  User, Phone as PhoneIcon, Car, Building2, MapPin, CreditCard, Briefcase, Package, Calendar, Circle,
+  Network, Box
 } from 'lucide-react';
 
 export interface Graph3DNode {
@@ -1514,7 +1515,7 @@ export default function Network3DGraph({
         </div>
       </div>
 
-      {/* Right Top Corner: Switch to 2D & Fullscreen Buttons */}
+      {/* Right Top Corner: Standalone Switch & Standalone Fullscreen Button */}
       <div style={{
         position: 'absolute',
         top: 14,
@@ -1522,64 +1523,127 @@ export default function Network3DGraph({
         zIndex: 20,
         display: 'flex',
         alignItems: 'center',
-        gap: 6,
-        background: 'rgba(15, 23, 42, 0.88)',
-        backdropFilter: 'blur(12px)',
-        padding: '6px',
-        borderRadius: 10,
-        border: '1px solid rgba(255, 255, 255, 0.12)',
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+        gap: 10,
       }}>
+        {/* Standalone 2D / 3D Segmented Switch */}
         {onSwitchTo2D && (
-          <button
-            type="button"
-            onClick={onSwitchTo2D}
-            title="Switch to 2D Graph View"
-            style={{
-              height: 30,
-              padding: '0 10px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              borderRadius: 6,
-              cursor: 'pointer',
-              transition: 'all 150ms ease',
-              background: 'rgba(255, 255, 255, 0.05)',
-              color: '#e2e8f0',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            <Layers size={14} style={{ color: '#38bdf8' }} />
-            <span>Switch to 2D</span>
-          </button>
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            height: 32,
+            boxSizing: 'border-box',
+            background: 'rgba(15, 23, 42, 0.88)',
+            backdropFilter: 'blur(12px)',
+            padding: '2px',
+            borderRadius: 8,
+            border: '1px solid rgba(255, 255, 255, 0.12)',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+            gap: 2,
+          }}>
+            <button
+              type="button"
+              onClick={onSwitchTo2D}
+              title="Switch to 2D Graph View"
+              style={{
+                height: 26,
+                boxSizing: 'border-box',
+                padding: '0 9px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                borderRadius: 6,
+                cursor: 'pointer',
+                transition: 'all 150ms ease',
+                background: 'transparent',
+                color: '#94a3b8',
+                border: 'none',
+                fontSize: '0.74rem',
+                fontWeight: 500,
+                whiteSpace: 'nowrap',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = '#f8fafc';
+                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = '#94a3b8';
+                e.currentTarget.style.background = 'transparent';
+              }}
+            >
+              <Network size={13} style={{ color: '#94a3b8' }} />
+              <span>2D</span>
+            </button>
+
+            <button
+              type="button"
+              title="Currently in 3D Space View"
+              style={{
+                height: 26,
+                boxSizing: 'border-box',
+                padding: '0 9px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 5,
+                borderRadius: 6,
+                cursor: 'default',
+                transition: 'all 150ms ease',
+                background: 'rgba(56, 189, 248, 0.22)',
+                color: '#38bdf8',
+                border: '1px solid rgba(56, 189, 248, 0.45)',
+                boxShadow: '0 0 10px rgba(56, 189, 248, 0.25)',
+                fontSize: '0.74rem',
+                fontWeight: 700,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <Box size={13} style={{ color: '#38bdf8' }} />
+              <span>3D</span>
+            </button>
+          </div>
         )}
 
+        {/* Standalone Fullscreen Button */}
         {onToggleFullscreen && (
           <button
             type="button"
             onClick={onToggleFullscreen}
             title={isFullscreen ? 'Exit Fullscreen (Esc / F11)' : 'Full Screen (F11)'}
             style={{
-              width: 30,
-              height: 30,
+              width: 32,
+              height: 32,
+              boxSizing: 'border-box',
               padding: 0,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              borderRadius: 6,
+              borderRadius: 8,
               cursor: 'pointer',
               transition: 'all 150ms ease',
-              background: isFullscreen ? 'rgba(56, 189, 248, 0.25)' : 'rgba(255, 255, 255, 0.05)',
-              color: isFullscreen ? '#38bdf8' : '#94a3b8',
-              border: isFullscreen ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.08)',
-              boxShadow: isFullscreen ? '0 0 10px rgba(56, 189, 248, 0.35)' : 'none',
+              background: isFullscreen ? 'rgba(56, 189, 248, 0.25)' : 'rgba(15, 23, 42, 0.88)',
+              backdropFilter: 'blur(12px)',
+              color: isFullscreen ? '#38bdf8' : '#e2e8f0',
+              border: isFullscreen ? '1px solid rgba(56, 189, 248, 0.6)' : '1px solid rgba(255, 255, 255, 0.12)',
+              boxShadow: isFullscreen
+                ? '0 0 12px rgba(56, 189, 248, 0.35), 0 8px 32px rgba(0, 0, 0, 0.4)'
+                : '0 8px 32px rgba(0, 0, 0, 0.4)',
               flexShrink: 0,
             }}
+            onMouseEnter={(e) => {
+              if (!isFullscreen) {
+                e.currentTarget.style.background = 'rgba(30, 41, 59, 0.95)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.25)';
+                e.currentTarget.style.color = '#ffffff';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (!isFullscreen) {
+                e.currentTarget.style.background = 'rgba(15, 23, 42, 0.88)';
+                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.12)';
+                e.currentTarget.style.color = '#e2e8f0';
+              }
+            }}
           >
-            {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+            {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
           </button>
         )}
       </div>
