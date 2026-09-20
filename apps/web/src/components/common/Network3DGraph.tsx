@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { ViewHelper } from 'three/examples/jsm/helpers/ViewHelper.js';
 import {
   RotateCw, ZoomIn, ZoomOut, Maximize2, Minimize2, Play, Pause,
   Layers, Eye, EyeOff, RefreshCw, Sparkles, Filter
@@ -79,12 +80,14 @@ export default function Network3DGraph({
   const [activeFilter, setActiveFilter] = useState<string>('ALL');
   const [hoveredNode, setHoveredNode] = useState<Graph3DNode | null>(null);
   const [simRunning, setSimRunning] = useState(false);
+  const [sceneReady, setSceneReady] = useState(false);
 
   // References to keep Three.js state across re-renders
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
+  const viewHelperRef = useRef<ViewHelper | null>(null);
   const animFrameId = useRef<number | null>(null);
 
   const nodeMeshes = useRef<Map<string, THREE.Mesh>>(new Map());
@@ -158,6 +161,7 @@ export default function Network3DGraph({
     renderer.toneMappingExposure = 1.2;
     rendererRef.current = renderer;
 
+    renderer.autoClear = false;
     container.replaceChildren(renderer.domElement);
 
     // 4. Orbit Controls
@@ -169,6 +173,30 @@ export default function Network3DGraph({
     controls.maxDistance = 1600;
     controls.minDistance = 30;
     controlsRef.current = controls;
+
+    // 4b. 3D Viewport Orientation Gizmo (like Unity Scene Gizmo)
+    const viewHelper = new ViewHelper(camera, renderer.domElement);
+    viewHelper.setLabels('X', 'Y', 'Z');
+    viewHelper.setLabelStyle('bold 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', '#ffffff', 14);
+    viewHelper.location = { top: null, right: 18, bottom: 18, left: null };
+    viewHelper.center.copy(controls.target);
+    viewHelperRef.current = viewHelper;
+
+    // Glowing center sphere inside gizmo
+    const centerGizmoMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.24, 16, 16),
+      new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+    );
+    viewHelper.add(centerGizmoMesh);
+
+    // Subtle equator ring inside gizmo
+    const ringGizmoMesh = new THREE.Mesh(
+      new THREE.RingGeometry(0.96, 1.02, 40),
+      new THREE.MeshBasicMaterial({ color: 0x64748b, side: THREE.DoubleSide, transparent: true, opacity: 0.35 })
+    );
+    viewHelper.add(ringGizmoMesh);
+
+    setSceneReady(true);
 
     // 5. Lighting
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
@@ -187,21 +215,128 @@ export default function Network3DGraph({
     grid.position.y = -180;
     scene.add(grid);
 
+    // 6b. Central Holographic Cyber Globe
+    const cyberGlobeGroup = new THREE.Group();
+    const globeRadius = Math.max(120, Math.cbrt(visibleNodes.length || 1) * 58);
+
+    const globeGeo = new THREE.SphereGeometry(globeRadius, 24, 16);
+    const globeMat = new THREE.MeshBasicMaterial({
+      color: 0x0284c7,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.10,
+    });
+    const globeMesh = new THREE.Mesh(globeGeo, globeMat);
+    cyberGlobeGroup.add(globeMesh);
+
+    const eqGeo = new THREE.RingGeometry(globeRadius - 0.8, globeRadius + 1.2, 56);
+    const eqMat = new THREE.MeshBasicMaterial({
+      color: 0x38bdf8,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.22,
+    });
+    const eqMesh = new THREE.Mesh(eqGeo, eqMat);
+    eqMesh.rotation.x = Math.PI / 2;
+    cyberGlobeGroup.add(eqMesh);
+
+    const merGeo = new THREE.RingGeometry(globeRadius - 0.8, globeRadius + 1.2, 56);
+    const merMat = new THREE.MeshBasicMaterial({
+      color: 0x818cf8,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.16,
+    });
+    const merMesh = new THREE.Mesh(merGeo, merMat);
+    merMesh.rotation.y = Math.PI / 2;
+    cyberGlobeGroup.add(merMesh);
+
+    scene.add(cyberGlobeGroup);
+
     // 7. Raycaster for clicking & hovering
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2(-9999, -9999);
 
+    let pointerDownPos = { x: 0, y: 0 };
+    const onPointerDown = (event: MouseEvent) => {
+      pointerDownPos = { x: event.clientX, y: event.clientY };
+    };
+
     const onMouseMove = (event: MouseEvent) => {
       const rect = container.getBoundingClientRect();
-      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      const mouseX = event.clientX - rect.left;
+      const mouseY = event.clientY - rect.top;
+
+      // Bottom-right Gizmo region check (dim=128, right=18, bottom=18)
+      const gizmoCenterX = rect.width - 18 - 64;
+      const gizmoCenterY = rect.height - 18 - 64;
+      const distFromGizmo = Math.hypot(mouseX - gizmoCenterX, mouseY - gizmoCenterY);
+
+      if (distFromGizmo <= 64) {
+        container.style.cursor = 'pointer';
+        setHoveredNode(null);
+        mouse.x = -9999;
+        mouse.y = -9999;
+        return;
+      }
+
+      mouse.x = (mouseX / rect.width) * 2 - 1;
+      mouse.y = -(mouseY / rect.height) * 2 + 1;
+    };
+
+    // Smooth transition to Isometric perspective
+    const animateToIsometric = () => {
+      const currentDist = camera.position.distanceTo(controls.target) || 420;
+      const isoDir = new THREE.Vector3(1, 0.75, 1).normalize();
+      const targetPos = controls.target.clone().add(isoDir.multiplyScalar(currentDist));
+
+      let t = 0;
+      const startPos = camera.position.clone();
+      const startTarget = controls.target.clone();
+      const isoAnim = () => {
+        t += 0.05;
+        const ease = 0.5 - 0.5 * Math.cos(Math.PI * Math.min(t, 1));
+        camera.position.lerpVectors(startPos, targetPos, ease);
+        camera.lookAt(startTarget);
+        controls.update();
+        if (t < 1) {
+          requestAnimationFrame(isoAnim);
+        }
+      };
+      isoAnim();
     };
 
     const onClick = (event: MouseEvent) => {
+      // If mouse moved noticeably during press, user was orbiting/dragging -> ignore click
+      const distMoved = Math.hypot(event.clientX - pointerDownPos.x, event.clientY - pointerDownPos.y);
+      if (distMoved > 6) return;
+
       const rect = container.getBoundingClientRect();
+      const clickX = event.clientX - rect.left;
+      const clickY = event.clientY - rect.top;
+
+      // Check if click was inside Bottom-Right Gizmo (dim=128, right=18, bottom=18)
+      const gizmoCenterX = rect.width - 18 - 64;
+      const gizmoCenterY = rect.height - 18 - 64;
+      const distFromGizmo = Math.hypot(clickX - gizmoCenterX, clickY - gizmoCenterY);
+
+      if (distFromGizmo <= 64) {
+        // Center sphere click -> Isometric view
+        if (distFromGizmo <= 20) {
+          animateToIsometric();
+          return;
+        }
+
+        // Axis cone / badge click -> Snap to orthogonal axis
+        if (viewHelper.handleClick(event)) {
+          return;
+        }
+        return; // Absorb click inside gizmo bounds so background nodes aren't triggered
+      }
+
       const clickMouse = new THREE.Vector2(
-        ((event.clientX - rect.left) / rect.width) * 2 - 1,
-        -((event.clientY - rect.top) / rect.height) * 2 + 1
+        (clickX / rect.width) * 2 - 1,
+        -(clickY / rect.height) * 2 + 1
       );
 
       raycaster.setFromCamera(clickMouse, camera);
@@ -233,6 +368,7 @@ export default function Network3DGraph({
       }
     };
 
+    container.addEventListener('pointerdown', onPointerDown);
     container.addEventListener('mousemove', onMouseMove);
     container.addEventListener('click', onClick);
 
@@ -457,17 +593,32 @@ export default function Network3DGraph({
         halo.scale.set(scale, scale, scale);
       });
 
-      controls.update();
+      cyberGlobeGroup.rotation.y += 0.0006;
+
+      viewHelper.center.copy(controls.target);
+      if (viewHelper.animating) {
+        controls.enabled = false;
+        viewHelper.update(delta);
+      } else {
+        controls.enabled = true;
+        controls.update();
+      }
+
+      renderer.clear();
       renderer.render(scene, camera);
+      viewHelper.render(renderer);
     };
 
     animFrameId.current = requestAnimationFrame(animate);
 
     return () => {
       if (animFrameId.current) cancelAnimationFrame(animFrameId.current);
+      setSceneReady(false);
       resizeObserver.disconnect();
+      container.removeEventListener('pointerdown', onPointerDown);
       container.removeEventListener('mousemove', onMouseMove);
       container.removeEventListener('click', onClick);
+      viewHelper.dispose();
       renderer.dispose();
     };
   }, [visibleNodes, visibleEdges, autoRotate, simRunning]);
@@ -718,7 +869,7 @@ export default function Network3DGraph({
       <div style={{
         position: 'absolute',
         top: 14,
-        right: onToggleFullscreen ? 58 : 16,
+        right: 16,
         display: 'flex',
         alignItems: 'center',
         gap: 6,
@@ -815,11 +966,11 @@ export default function Network3DGraph({
         </div>
       )}
 
-      {/* 3D Space Legend in Bottom Right */}
+      {/* 3D Space Legend in Bottom Left */}
       <div style={{
         position: 'absolute',
-        bottom: 20,
-        right: 20,
+        bottom: 16,
+        left: 16,
         zIndex: 10,
         background: 'rgba(15, 23, 42, 0.75)',
         backdropFilter: 'blur(10px)',
@@ -838,6 +989,23 @@ export default function Network3DGraph({
         <div>• <strong>Right Click + Drag:</strong> Pan / Translate</div>
         <div>• <strong>Scroll Wheel:</strong> Zoom In / Out</div>
         <div>• <strong>Click Sphere:</strong> Fly to Target Node</div>
+      </div>
+
+      {/* Unity Engine Scene Orientation Gizmo Indicator */}
+      <div style={{
+        position: 'absolute',
+        bottom: 6,
+        right: 46,
+        zIndex: 10,
+        fontSize: '0.62rem',
+        fontWeight: 700,
+        letterSpacing: '0.08em',
+        textTransform: 'uppercase',
+        color: 'rgba(148, 163, 184, 0.55)',
+        pointerEvents: 'none',
+        userSelect: 'none',
+      }}>
+        Persp
       </div>
     </div>
   );
