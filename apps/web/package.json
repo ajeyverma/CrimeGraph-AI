@@ -45,9 +45,11 @@
     },
     "files": [
       "dist/**/*",
-      "electron/**/*"
+      "electron/**/*",
+      "public/icon.png"
     ],
     "win": {
+      "icon": "public/icon.png",
       "target": [
         "nsis",
         "portable"

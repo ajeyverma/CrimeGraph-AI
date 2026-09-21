@@ -22,15 +22,26 @@ function log(msg) {
 function createWindow() {
   log('createWindow() called');
   try {
+    const iconPath = fs.existsSync(path.join(__dirname, '../public/icon.png'))
+      ? path.join(__dirname, '../public/icon.png')
+      : path.join(__dirname, '../dist/icon.png');
+
     mainWindow = new BrowserWindow({
       width: 1440,
       height: 900,
       minWidth: 1080,
       minHeight: 700,
       title: 'CrimeGraph AI — Criminal Intelligence Platform',
-      backgroundColor: '#0a0e1a',
+      icon: iconPath,
+      backgroundColor: '#ffffff',
       show: true,
       autoHideMenuBar: true,
+      titleBarStyle: 'hidden',
+      titleBarOverlay: {
+        color: '#ffffff',
+        symbolColor: '#1e293b',
+        height: 36,
+      },
       webPreferences: {
         preload: path.join(__dirname, 'preload.cjs'),
         contextIsolation: true,
@@ -39,6 +50,12 @@ function createWindow() {
         webSecurity: true,
       },
     });
+
+    try {
+      if (fs.existsSync(iconPath)) {
+        mainWindow.setIcon(iconPath);
+      }
+    } catch (e) {}
 
     mainWindow.removeMenu();
 

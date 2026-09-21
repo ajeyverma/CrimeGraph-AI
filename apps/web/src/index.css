@@ -101,6 +101,11 @@
   --sidebar-width: 240px;
   --sidebar-collapsed-width: 56px;
   --topbar-height: 60px;
+  --desktop-titlebar-height: 0px;
+}
+
+body.has-electron-titlebar {
+  --desktop-titlebar-height: 36px;
 }
 
 /* Reset & Base */
@@ -257,8 +262,8 @@ pre {
 
 .page-content {
   flex: 1;
-  margin-top: var(--topbar-height);
-  height: calc(100vh - var(--topbar-height));
+  margin-top: calc(var(--topbar-height) + var(--desktop-titlebar-height));
+  height: calc(100vh - var(--topbar-height) - var(--desktop-titlebar-height));
   overflow-y: auto;
   overflow-x: hidden;
   padding: var(--spacing-lg);
@@ -933,10 +938,10 @@ select option,
    ============================================ */
 .sidebar {
   position: fixed;
-  top: var(--topbar-height);
+  top: calc(var(--topbar-height) + var(--desktop-titlebar-height));
   left: 0;
   width: var(--sidebar-collapsed-width);
-  height: calc(100vh - var(--topbar-height));
+  height: calc(100vh - var(--topbar-height) - var(--desktop-titlebar-height));
   background: #ffffff;
   border-right: 1px solid #e2e8f0;
   display: flex;
@@ -1063,7 +1068,7 @@ select option,
    ============================================ */
 .topbar {
   position: fixed;
-  top: 0;
+  top: var(--desktop-titlebar-height);
   left: 0;
   right: 0;
   width: 100%;
@@ -1075,6 +1080,86 @@ select option,
   padding: 0 var(--spacing-lg);
   gap: var(--spacing-md);
   z-index: 1000;
+}
+
+/* ============================================
+   Desktop Titlebar (Electron Frameless)
+   ============================================ */
+.desktop-titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  height: var(--desktop-titlebar-height, 36px);
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  z-index: 10002;
+  display: flex;
+  align-items: center;
+  user-select: none;
+}
+
+.desktop-titlebar-drag-region {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  -webkit-app-region: drag;
+  padding: 0 12px;
+}
+
+.desktop-titlebar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  -webkit-app-region: drag;
+}
+
+.desktop-titlebar-logo {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.desktop-titlebar-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #0f172a;
+}
+
+.desktop-titlebar-badge {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.desktop-titlebar-center {
+  font-size: 0.68rem;
+  color: #64748b;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  -webkit-app-region: drag;
+}
+
+.desktop-titlebar-controls-spacer {
+  width: 138px;
+  height: 100%;
+  flex-shrink: 0;
+  background: #ffffff;
+  -webkit-app-region: no-drag;
 }
 
 .topbar-search {

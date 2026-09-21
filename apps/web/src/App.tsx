@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { DatabaseProvider } from './contexts/DatabaseContext';
 import AddDatabaseModal from './components/database/AddDatabaseModal';
+import DesktopTitlebar from './components/layout/DesktopTitlebar';
 import AppLayout from './components/layout/AppLayout';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
@@ -42,6 +43,7 @@ export default function App() {
   return (
     <AuthProvider>
       <DatabaseProvider>
+        <DesktopTitlebar />
         <AddDatabaseModal />
         <Routes>
           <Route path="/login" element={<LoginPage />} />
