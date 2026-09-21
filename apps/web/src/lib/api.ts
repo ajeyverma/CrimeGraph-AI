@@ -40,7 +40,7 @@ api.interceptors.response.use(
             localStorage.removeItem('accessToken');
             localStorage.removeItem('refreshToken');
             localStorage.removeItem('cg_demo_user');
-            window.location.href = '/login';
+            window.location.hash = '#/login';
           }
         }
       }

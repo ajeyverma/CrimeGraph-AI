@@ -32,11 +32,29 @@ import { logger } from './utils/logger';
 import { initPostgres } from './db/postgres';
 import { initNeo4j } from './db/neo4j';
 
+const allowedOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173')
+  .split(',')
+  .map((s) => s.trim());
+
+const isOriginAllowed = (origin: string | undefined): boolean => {
+  if (!origin) return true; // Desktop apps, curl, or server-to-server
+  if (origin === 'null' || origin.startsWith('file://')) return true; // Electron packaged client
+  if (allowedOrigins.includes('*') || allowedOrigins.includes(origin)) return true;
+  if (origin.includes('localhost') || origin.includes('127.0.0.1')) return true;
+  return false;
+};
+
 const app = express();
 const server = http.createServer(app);
 const io = new SocketIOServer(server, {
   cors: {
-    origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+    origin: (origin, callback) => {
+      if (isOriginAllowed(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -47,7 +65,13 @@ app.use(helmet({
   contentSecurityPolicy: false, // handled at frontend
 }));
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  origin: (origin, callback) => {
+    if (isOriginAllowed(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`Origin ${origin} not allowed by CORS`));
+    }
+  },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],

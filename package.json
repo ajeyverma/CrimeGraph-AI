@@ -2,7 +2,7 @@
   "name": "crimegraph-ai",
   "version": "1.0.0",
   "private": true,
-  "description": "CrimeGraph AI — AI-Powered Criminal Network Analysis System (SIH Prototype)",
+  "description": "CrimeGraph AI - AI-Powered Criminal Network Analysis System (SIH Prototype)",
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -11,7 +11,9 @@
     "dev": "concurrently \"npm run dev --workspace=apps/api\" \"npm run dev --workspace=apps/web\"",
     "dev:api": "npm run dev --workspace=apps/api",
     "dev:web": "npm run dev --workspace=apps/web",
+    "dev:desktop": "npm run electron:dev --workspace=apps/web",
     "build": "npm run build --workspace=apps/api && npm run build --workspace=apps/web",
+    "build:desktop": "npm run electron:build --workspace=apps/web",
     "seed": "npm run seed --workspace=apps/api",
     "setup": "node scripts/setup.js"
   },
